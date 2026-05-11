@@ -199,7 +199,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#F5EFE4] bg-[url('/figurabg.svg')] bg-repeat bg-size-[300px_300px] bg-center">
+    <div className="flex flex-col h-screen bg-[url('/bg-Uninorma.png')] bg-cover bg-center bg-no-repeat">
       {/* Header */}
       <header className="shrink-0 bg-[#9D1B1E]  relative z-10 shadow-[0_4px_20px_rgba(0,0,0,0.25)]">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-3">
@@ -267,7 +267,7 @@ export default function HomePage() {
       {/* Input bar */}
       <footer className="shrink-0 px-4 py-4 relative z-10">
         <div className="max-w-4xl mx-auto">
-          <div className="flex gap-3 items-end bg-white rounded-full pt-2 pr-2 pb-2 pl-5 shadow-[0_4px_24px_rgba(0,0,0,0.12)] border border-[#E0D6C8]">
+          <div className="flex gap-3 items-end bg-white rounded-full pt-2 pr-2 pb-2 pl-5 shadow-[0_4px_24px_rgba(0,0,0,0.12)] border-2 border-[#9D1B1E]">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
