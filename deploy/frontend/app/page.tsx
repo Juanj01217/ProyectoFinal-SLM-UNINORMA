@@ -240,7 +240,7 @@ export default function HomePage() {
       <main className="flex-1 overflow-y-auto relative z-1">
         <div className="max-w-6xl mx-auto px-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)] py-6 sm:py-10 gap-4 sm:gap-8">
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)] py-6 gap-4 sm:gap-8">
               <div className="hidden sm:block">
                 <GoldenTree />
               </div>
