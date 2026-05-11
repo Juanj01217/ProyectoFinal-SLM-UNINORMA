@@ -1,3 +1,4 @@
+import Image from "next/image";
 import SourceCard from "./SourceCard";
 import { Source } from "../lib/api";
 
@@ -10,7 +11,7 @@ export interface Message {
 }
 
 interface Props {
-  message: Message;
+  readonly message: Message;
 }
 
 export default function ChatMessage({ message }: Props) {
@@ -19,15 +20,15 @@ export default function ChatMessage({ message }: Props) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
       {!isUser && (
-        <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0 mr-3 mt-1">
-          U
+        <div className="w-8 h-8 rounded-full bg-[#9D1B1E] flex items-center justify-center shrink-0 mr-3 mt-1 overflow-hidden">
+          <Image src="/uninorte_tree.svg" alt="Uninorma" width={20} height={20} className="object-contain" />
         </div>
       )}
 
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 ${
           isUser
-            ? "bg-blue-600 text-white rounded-tr-sm"
+            ? "bg-[#9D1B1E] text-white rounded-tr-sm"
             : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm shadow-sm"
         }`}
       >
