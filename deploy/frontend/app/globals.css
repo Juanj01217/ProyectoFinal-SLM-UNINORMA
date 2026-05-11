@@ -23,3 +23,28 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5EFE4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C8B49A;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9D1B1E;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #C8B49A #F5EFE4;
+}

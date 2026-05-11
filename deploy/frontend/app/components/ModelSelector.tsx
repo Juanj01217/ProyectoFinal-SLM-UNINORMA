@@ -15,13 +15,14 @@ export default function ModelSelector({ models, selected, onSelect, loading }: P
         value={selected}
         onChange={(e) => onSelect(e.target.value)}
         disabled={loading}
-        className="appearance-none text-sm pr-8 pl-4 py-2 bg-white focus:outline-none focus:ring-2 disabled:opacity-50 cursor-pointer"
+        className="appearance-none text-sm pr-8 pl-3 sm:pl-4 py-2 bg-white focus:outline-none focus:ring-2 disabled:opacity-50 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.12)]"
         style={{
           border: "1px solid #D1C9BE",
           borderRadius: 8,
           color: "#1A1A1A",
           fontWeight: 500,
-          minWidth: 180,
+          minWidth: 130,
+          maxWidth: 200,
         }}
       >
         {models.map((m) => (
