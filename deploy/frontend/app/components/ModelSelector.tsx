@@ -9,21 +9,42 @@ interface Props {
 
 export default function ModelSelector({ models, selected, onSelect, loading }: Props) {
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="model-select" className="text-sm text-gray-600 whitespace-nowrap">Modelo SLM:</label>
+    <div className="relative flex items-center">
       <select
         id="model-select"
         value={selected}
         onChange={(e) => onSelect(e.target.value)}
         disabled={loading}
-        className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+        className="appearance-none text-sm pr-8 pl-4 py-2 bg-white focus:outline-none focus:ring-2 disabled:opacity-50 cursor-pointer"
+        style={{
+          border: "1px solid #D1C9BE",
+          borderRadius: 8,
+          color: "#1A1A1A",
+          fontWeight: 500,
+          minWidth: 180,
+        }}
       >
         {models.map((m) => (
           <option key={m} value={m}>
-            {m}
+            Modelo SLM: {m}
           </option>
         ))}
       </select>
+      {/* Custom dropdown arrow */}
+      <svg
+        className="pointer-events-none absolute right-2.5"
+        style={{ color: "#6B5E52" }}
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
     </div>
   );
 }

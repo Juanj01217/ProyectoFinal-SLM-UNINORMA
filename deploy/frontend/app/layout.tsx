@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Oswald } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const oswald = Oswald({
+  variable: "--font-oswald",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -13,8 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Asistente de Normatividad — Uninorte",
+  title: "Uninorma",
   description: "Consulta la normatividad institucional de la Universidad del Norte en lenguaje natural.",
+  icons: {
+    icon: "/uninorte_tree.svg",
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${oswald.variable} ${oswald.className} ${geistMono.variable} antialiased`}
       >
         {children}
       </body>
