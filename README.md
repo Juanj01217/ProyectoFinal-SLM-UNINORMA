@@ -1,20 +1,34 @@
 # ProyectoFinal-SLM-UNINORMA
 
-# Informe 2: Asistente Virtual Basado en Small Language Model (SLM) para la Consulta de Normatividad de Uninorte
+# Informe Final: Asistente Virtual Basado en Small Language Model (SLM) para la Consulta de Normatividad de Uninorte
 
 **Equipo:** Carlos Mendoza, Jesús De la Cruz, Juan José Aragón
 **Docente:** Augusto Salazar
 **Universidad del Norte — Semestre 2026-1**
 
 ---
-
 ## 1. Introducción
 
 El acceso eficiente a la información institucional constituye un pilar fundamental en las instituciones de educación superior. En el contexto contemporáneo, la normatividad universitaria abarca estatutos, reglamentos estudiantiles, políticas académicas, resoluciones administrativas y acuerdos del consejo directivo, todos ellos dispersos en documentos PDF de decenas o centenas de páginas alojados en portales web de difícil navegación. Esta fragmentación impone una carga cognitiva significativa sobre los miembros de la comunidad académica —estudiantes, docentes y personal administrativo— quienes, ante una duda concreta, deben emprender búsquedas manuales de alto costo en tiempo y esfuerzo sin garantía de encontrar la información pertinente.
 
 Con el advenimiento del Procesamiento de Lenguaje Natural (NLP) y, más recientemente, de los Modelos de Lenguaje Grande (LLMs), ha emergido un nuevo paradigma de interacción humano-computadora basado en interfaces conversacionales en lenguaje natural. Estos sistemas prometen eliminar la barrera entre el usuario y la información estructurada, transformando la experiencia de consulta en un diálogo fluido. Sin embargo, la adopción de LLMs comerciales a través de APIs de terceros plantea desafíos críticos en entornos institucionales: la privacidad de los datos consultados queda expuesta a proveedores externos, la dependencia de infraestructura en la nube genera costos operativos recurrentes y la naturaleza "caja negra" de estos servicios impide garantizar la trazabilidad y fidelidad de las respuestas generadas.
 
-Para abordar estas problemáticas, el presente proyecto propone el diseño e implementación de UNINORMA, un asistente virtual inteligente basado en la arquitectura Retrieval-Augmented Generation (RAG) combinada con Small Language Models (SLMs) de ejecución local. La solución opera en modo 100% local (_on-premise_), empleando técnicas de cuantización de pesos para viabilizar el despliegue de modelos de miles de millones de parámetros en hardware de consumo estándar. Este informe documenta el estado actual del proyecto, abarcando los requerimientos definitivos, las decisiones de diseño y arquitectura adoptadas, la implementación funcional desarrollada y el plan de pruebas que guiará la validación del sistema.
+Para abordar estas problemáticas, el presente proyecto propone el diseño e implementación de UNINORMA, un asistente virtual inteligente basado en la arquitectura Retrieval-Augmented Generation (RAG) combinada con Small Language Models (SLMs). La solución ha evolucionado hacia un despliegue definitivo en hardware **Orange Pi 5 Pro / Plus**, optimizando la carga de trabajo mediante una arquitectura distribuida: los servicios de orquestación y frontend se ejecutan en la placa ARM, mientras que la inferencia del SLM se delega a un servidor externo para garantizar tiempos de respuesta óptimos. Este informe documenta el estado actual del proyecto, abarcando los requerimientos definitivos, las decisiones de diseño y arquitectura adoptadas, la implementación funcional desarrollada y el plan de pruebas que guiará la validación del sistema.
+
+---
+
+## 1.1. ¿Qué es un Small Language Model (SLM)?
+
+Los **Small Language Models (SLM)** son modelos de lenguaje diseñados para comprender y generar texto en lenguaje natural con un número reducido de parámetros (generalmente entre 1B y 7B) en comparación con los Large Language Models (LLMs) como GPT-4 o Claude. 
+
+A diferencia de los LLMs, cuyo objetivo es cubrir conocimiento general masivo, los SLMs se centran en:
+- **Eficiencia:** Requieren significativamente menos memoria RAM/VRAM y potencia de cómputo.
+- **Especialización:** Son altamente efectivos cuando se acotan a un dominio específico (como la normatividad universitaria) mediante técnicas como RAG.
+- **Privacidad y Control:** Permiten el despliegue local o en infraestructura privada, eliminando la dependencia de APIs de terceros y garantizando la soberanía de los datos.
+- **Baja Latencia:** Su tamaño compacto permite una inferencia más rápida, ideal para aplicaciones en tiempo real y dispositivos edge.
+
+En este proyecto, utilizamos el modelo **Qwen 2.5:1.5b**, el cual ofrece un equilibrio excepcional entre precisión lingüística en español y velocidad de procesamiento.
+
 
 ---
 
@@ -28,11 +42,12 @@ El modelo actual de acceso a esta normatividad presenta deficiencias estructural
 
 La consecuencia más crítica de esta brecha de acceso es la desinformación activa: estudiantes que toman decisiones académicas (matricular asignaturas, solicitar retiros de materias, interponer recursos disciplinarios) con base en información incompleta o malinterpretada por no haber encontrado el artículo reglamentario pertinente. Se requiere, por tanto, un sistema capaz de comprender el lenguaje natural del usuario, recuperar los fragmentos exactos dentro del corpus normativo y sintetizar una respuesta coherente y citable, sin generar información que no esté respaldada por los documentos institucionales.
 
-### 2.2. Restricciones y Supuestos de Diseño
+## 2.2 Restricciones y Supuestos de Diseño
 
-Desde el punto de vista de la infraestructura computacional, la principal restricción del proyecto es la obligatoriedad de ejecución local (_on-premise_). La arquitectura no puede depender de servicios en la nube como OpenAI, Anthropic, Google Vertex AI o plataformas equivalentes para la fase de inferencia generativa, dado que esto implicaría transmitir consultas potencialmente sensibles de la comunidad académica a servidores externos. Esta restricción condiciona directamente la selección del modelo generativo, limitándola a modelos que puedan operar dentro de la memoria RAM/VRAM disponible en hardware de grado consumidor. En la práctica, esto se traduce en el uso del modelo Qwen 2.5:3b (3.1 miles de millones de parámetros) bajo cuantización Q4_K_M a través del motor de inferencia Ollama, cuya huella de memoria en tiempo de ejecución es de aproximadamente 3.5 GB.
+Desde el punto de vista de la infraestructura computacional, la principal restricción del proyecto es la obligatoriedad de ejecución local (_on-premise_). Sin embargo, debido a las limitaciones de recursos del hardware **Orange Pi 5 Pro / Plus**, se ha adoptado una arquitectura de carga distribuida como despliegue definitivo. El motor de inferencia (Ollama) no se encuentra desplegado en el mismo contenedor que el backend y frontend; en su lugar, se instancia en un ordenador independiente (PC con GPU/CPU dedicada) para repartir la carga de rendimiento y lograr una mejor respuesta del SLM. Esto permite que la Orange Pi se dedique exclusivamente a la gestión de la base de datos vectorial (ChromaDB), la orquestación RAG y el servicio web, mientras que el modelo **Qwen 2.5:1.5b** (1.5 mil millones de parámetros) corre de forma externa, optimizando drásticamente la latencia.
 
-En cuanto a restricciones de diseño de software, el sistema está concebido como un prototipo funcional de validación académica y no como un sistema de producción a escala universitaria. Esto implica que el servidor de inferencia (Ollama) maneja las solicitudes de forma secuencial —sin paralelismo de instancias del modelo—, lo que establece un cuello de botella de rendimiento frente a cargas concurrentes simultáneas. Asimismo, la veracidad de las respuestas está acotada por el alcance del corpus ingresado: el sistema no debe, bajo ninguna circunstancia, generar respuestas basadas en conocimiento paramétrico externo al corpus; toda afirmación debe estar fundamentada en los fragmentos recuperados por el componente de recuperación semántica.
+En cuanto a restricciones de diseño de software, el sistema está concebido como un prototipo funcional de validación académica y no como un sistema de producción a escala universitaria. El servidor de inferencia externo maneja las solicitudes de forma secuencial, lo que establece un cuello de botella de rendimiento frente a cargas concurrentes simultáneas. Asimismo, la veracidad de las respuestas está acotada por el alcance del corpus ingresado: el sistema no debe, bajo ninguna circunstancia, generar respuestas basadas en conocimiento paramétrico externo al corpus; toda afirmación debe estar fundamentada en los fragmentos recuperados por el componente de recuperación semántica.
+
 
 Los supuestos fundamentales bajo los cuales se plantea la solución son los siguientes: (a) el corpus documental de 25 fuentes —20 PDFs y 5 páginas web— procesado en 907 fragmentos (_chunks_) constituye una muestra representativa y suficiente de la normatividad activa de la institución para los propósitos de validación del prototipo; (b) los usuarios finales interactuarán con el sistema utilizando exclusivamente el idioma español, lo cual justifica la selección de un modelo de _embeddings_ multilingüe con énfasis en representaciones del español; y (c) el entorno de despliegue contará con un mínimo de 8 GB de RAM, 2 núcleos de CPU y 20 GB de espacio en disco, conforme a los requerimientos documentados del stack tecnológico seleccionado.
 
@@ -128,18 +143,19 @@ Para cada decisión tecnológica clave del sistema, se evaluaron múltiples alte
 
 **Bases de datos vectoriales:** Se evaluaron Pinecone, Weaviate, Milvus y ChromaDB. Pinecone y Weaviate fueron descartadas inmediatamente al ser servicios en la nube, lo que viola la restricción de privacidad RNF01. Milvus, aunque de código abierto y desplegable localmente, requiere una infraestructura dedicada (servidor independiente, configuración de clúster) que excede la complejidad operativa aceptable para un prototipo académico. ChromaDB fue seleccionada por ser una base de datos vectorial embebida que opera en el mismo proceso que la aplicación Python, sin requerir un servidor separado, con soporte nativo para persistencia en disco y una API limpia para la integración con LangChain.
 
-**Modelos de lenguaje:** Se evaluaron tres enfoques: APIs comerciales (OpenAI GPT-4, Google Gemini, Anthropic Claude), modelos locales de alto parámetro (Llama 3.1:70b, Mixtral 8x7b) y SLMs cuantizados (Qwen 2.5:3b, Llama 3.2:3b, Phi-3 Mini). Las APIs comerciales fueron descartadas por las razones expuestas en el Estado del Arte (privacidad y costo). Los modelos de alto parámetro, aunque superiores en capacidad de razonamiento, requieren entre 40 y 80 GB de VRAM para inferencia eficiente, lo que los hace inviables en hardware de consumo. Entre los SLMs cuantizados, Qwen 2.5:3b fue seleccionado por su superior desempeño en tareas de comprensión lectora en español frente a Llama 3.2:3b y Phi-3 Mini en evaluaciones preliminares, manteniendo una huella de memoria de ~2 GB bajo cuantización Q4_K_M.
+**Modelos de lenguaje:** Se evaluaron tres enfoques: APIs comerciales (OpenAI GPT-4, Google Gemini, Anthropic Claude), modelos locales de alto parámetro (Llama 3.1:70b, Mixtral 8x7b) y SLMs cuantizados (Qwen 2.5:1.5b, Qwen 2.5:3b, Llama 3.2:3b, Phi-3 Mini). Las APIs comerciales fueron descartadas por las razones expuestas en el Estado del Arte (privacidad y costo). Los modelos de alto parámetro, aunque superiores en capacidad de razonamiento, requieren entre 40 y 80 GB de VRAM para inferencia eficiente, lo que los hace inviables en hardware de consumo. Entre los SLMs cuantizados, Qwen 2.5:1.5b fue seleccionado por su superior desempeño en tareas de comprensión lectora en español frente a Llama 3.2:3b y Phi-3 Mini en evaluaciones preliminares, manteniendo una huella de memoria de ~2 GB bajo cuantización Q4_K_M.
 
 **Frameworks de orquestación y frontend:** Para la orquestación RAG, se evaluaron LangChain, LlamaIndex y una implementación manual del pipeline. LlamaIndex es igualmente competente, pero LangChain fue seleccionado por la mayor madurez de su ecosistema, la expresividad de su API declarativa (LCEL) y la mayor cantidad de recursos de documentación en español. Para el frontend, se evaluaron Vue.js/Nuxt 3, Angular y Next.js 16; Next.js fue seleccionado por su soporte nativo para Server Components, la facilidad de implementar un proxy inverso hacia el backend sin servidor adicional (mediante el sistema de rutas de API) y la compatibilidad con React 19, que reduce la curva de aprendizaje dado el conocimiento previo del equipo con el ecosistema React.
 
 | Decisión | Alternativas evaluadas | Selección | Criterio determinante |
 |----------|----------------------|-----------|----------------------|
 | Vector Store | Pinecone, Weaviate, Milvus, **ChromaDB** | ChromaDB | Embebido, local, sin servidor externo |
-| LLM | GPT-4 API, Llama 3.1:70b, **Qwen 2.5:3b** | Qwen 2.5:3b | Rendimiento en español, huella < 4 GB |
+| LLM | GPT-4 API, Llama 3.1:70b, **Qwen 2.5:1.5b** | Qwen 2.5:1.5b | Rendimiento en español, huella < 2 GB |
 | Embedding | OpenAI ada-002, **MiniLM-L12-v2**, mpnet-base-v2 | MiniLM-L12-v2 | Multilingüe, local, latencia baja |
 | Orquestación RAG | LlamaIndex, Manual, **LangChain LCEL** | LangChain | Ecosistema maduro, bajo acoplamiento |
 | Backend API | Django, Flask, **FastAPI** | FastAPI | Async nativo, OpenAPI automático, Pydantic |
 | Frontend | Vue/Nuxt, Angular, **Next.js 16** | Next.js | Proxy API nativo, React 19, SSR |
+
 
 ### 6.2. Arquitectura del Sistema
 
@@ -160,7 +176,8 @@ El sistema se divide en los siguientes componentes principales:
 
 - **Base de Datos Vectorial (ChromaDB):** Su responsabilidad exclusiva es el almacenamiento persistente de los vectores densos generados en la fase de ingesta y la ejecución eficiente de búsquedas por similitud del coseno. La colección `uninorte_normatividad` contiene 907 fragmentos vectorizados.
 
-- **Motor de Inferencia LLM (Ollama + Qwen 2.5:3b):** Servicio responsable de ejecutar el modelo cuantizado (Q4_K_M) y generar la respuesta en lenguaje natural basada estrictamente en el contexto entregado por el orquestador RAG. Opera como un servidor REST interno accesible en el puerto 11434.
+- **Motor de Inferencia LLM (Ollama + Qwen 2.5:1.5b):** El motor de inferencia se encuentra instanciado en un **ordenador independiente** para evitar el agotamiento de recursos en la Orange Pi. Este servicio ejecuta el modelo cuantizado y genera la respuesta en lenguaje natural basada estrictamente en el contexto entregado. La comunicación se realiza a través de la red local mediante la variable `OLLAMA_BASE_URL`.
+
 
 **Diagrama de Secuencia:**
 <img width="1344" height="553" alt="Diagrama de Secuencia" src="https://github.com/user-attachments/assets/973cd97a-c6cf-406e-b464-5cbacd7af30f" />
@@ -184,7 +201,12 @@ El backend del sistema está construido sobre **Python 3.11** como lenguaje prin
 
 El frontend está construido sobre **Next.js 16.1.6** con **React 19.2.3** y **TypeScript 5**, utilizando **Tailwind CSS 4** para el estilado. La arquitectura del frontend sigue el patrón App Router de Next.js 16, donde los componentes del servidor y del cliente coexisten en la misma estructura de directorios. El proxy inverso hacia el backend está implementado como una ruta de API de Next.js (`app/api/[...proxy]/route.ts`), lo que permite que el frontend se comunique con el backend sin exponer la URL interna del servicio al navegador del cliente. El _streaming_ de tokens se implementa mediante la API nativa `ReadableStream` del navegador, consumida desde los _Server Components_ de Next.js.
 
-La infraestructura de despliegue está completamente contenedorizada mediante **Docker** y orquestada con **Docker Compose 3.8**. El `docker-compose.yml` define tres servicios: `ollama` (imagen oficial `ollama/ollama:latest`), `backend` (imagen construida desde `Prototipo/Dockerfile` sobre `python:3.11-slim`) y `frontend` (imagen construida con _build_ de dos etapas desde `node:20-alpine`). El volumen `ollama_models` persiste los pesos del modelo LLM entre reinicios del contenedor. El sistema completo requiere un mínimo de 8 GB de RAM, distribuyéndose aproximadamente en 3.5 GB para Ollama + Qwen 2.5:3b, 600 MB para FastAPI + ChromaDB y 200 MB para el servidor Next.js.
+La infraestructura de despliegue está completamente contenedorizada mediante **Docker** y orquestada con **Docker Compose 3.8**. Para el despliegue definitivo en **Orange Pi 5 Pro / Plus**, se utiliza una configuración específica que optimiza el uso de la arquitectura ARM64. El sistema se divide en dos nodos:
+1. **Nodo Edge (Orange Pi):** Ejecuta los contenedores de `backend` y `frontend`.
+2. **Nodo de Inferencia (PC Externo):** Ejecuta el servicio de `ollama`.
+
+Esta separación garantiza que el sistema mantenga una latencia baja y una alta disponibilidad, evitando que la inferencia del LLM bloquee los servicios web en la placa ARM. El modelo seleccionado es **Qwen 2.5:1.5b**, optimizado para ejecutarse con una huella de memoria reducida.
+
 
 ### 7.2. Componentes
 
@@ -206,9 +228,10 @@ El frontend está organizado en cuatro componentes React reutilizables: `ChatMes
 
 ### 7.3. Integraciones
 
-La integración más crítica del sistema es la comunicación entre el backend Python y el motor de inferencia **Ollama**. Esta integración se realiza mediante el cliente HTTP oficial de Ollama para Python (`ollama>=0.1.0`), que abstrae las llamadas REST al servidor Ollama (puerto 11434). El módulo `ollama_client.py` gestiona el ciclo de vida de los modelos: verifica su disponibilidad, los carga en memoria si no están activos y expone métodos de generación con parámetros configurables (temperatura=0.1, max_tokens=2048). En el entorno Dockerizado, Ollama se ejecuta en un contenedor separado y el backend se conecta a él mediante la URL de servicio interna `http://ollama:11434`, parametrizable mediante la variable de entorno `OLLAMA_BASE_URL`.
+La integración más crítica del sistema es la comunicación entre el backend Python y el motor de inferencia **Ollama**. En la arquitectura definitiva, el backend se conecta a una instancia de Ollama instanciada en un **ordenador aparte**. Esta conexión se parametriza mediante la variable de entorno `OLLAMA_BASE_URL`, apuntando a la dirección IP privada del servidor de inferencia (ej. `http://192.168.1.50:11434`). Esta decisión de diseño permite repartir la carga de rendimiento, dejando que la Orange Pi gestione exclusivamente la lógica de negocio y la recuperación vectorial, mientras que el PC externo asume el costo computacional de la inferencia del modelo **Qwen 2.5:1.5b**.
 
-La integración con **ChromaDB** es de tipo embebido: la base de datos vectorial se instancia directamente en el proceso Python del backend, leyendo y escribiendo en el directorio `data/chroma_db/` del sistema de archivos del contenedor. Esta arquitectura sin servidor elimina la latencia de red en las operaciones de recuperación semántica, reduciendo el tiempo de búsqueda del Top-K a menos de 50 ms para una colección de 907 vectores. La comunicación entre LangChain y ChromaDB se realiza mediante el adaptador `langchain-community`, que expone la interfaz `Retriever` estándar de LangChain, lo que preserva el bajo acoplamiento de la arquitectura.
+La integración con **ChromaDB** es de tipo embebido: la base de datos vectorial se instancia directamente en el proceso Python del backend en la Orange Pi, leyendo y escribiendo en el directorio `data/chroma_db/` del sistema de archivos del contenedor. Esta arquitectura sin servidor elimina la latencia de red en las operaciones de recuperación semántica, reduciendo el tiempo de búsqueda del Top-K a menos de 50 ms para una colección de 907 vectores. La comunicación entre LangChain e integraciones se mantiene agnóstica a la ubicación física del servidor Ollama.
+
 
 La integración con **HuggingFace** para el modelo de embeddings ocurre en el momento de construcción del contenedor Docker del backend: el `Dockerfile` ejecuta un script de precarga del modelo `paraphrase-multilingual-MiniLM-L12-v2` durante la fase de _build_, evitando descargas en tiempo de ejecución. Esto garantiza que el sistema arranque en modo _offline_ completo una vez que la imagen Docker ha sido construida. El pipeline de ingesta se integra adicionalmente con el portal web de la Universidad del Norte mediante las dependencias `requests>=2.28.0` y `beautifulsoup4>=4.12.0`, utilizando selectores CSS específicos del CMS Liferay (`div.journal-content-article`, `div.c_cr`, `article`) para extraer el contenido relevante de las páginas de normatividad.
 
@@ -270,9 +293,10 @@ gantt
     UI/UX del chat y selector de modelos    :done, f3c, 2026-03-10, 2026-03-20
 
     section Fase 4: Despliegue
-    Configuración del servidor              :active, f4a, 2026-03-16, 2026-03-22
-    Despliegue del stack completo           :f4b, 2026-03-20, 2026-03-25
-    Pruebas en entorno de producción        :f4c, 2026-03-23, 2026-03-27
+    Configuración de Orange Pi 5           :done, f4a, 2026-03-16, 2026-03-22
+    Despliegue distribuido (OPi + PC)       :done, f4b, 2026-03-20, 2026-03-25
+    Pruebas en entorno Orange Pi            :done, f4c, 2026-03-23, 2026-03-27
+
 
     section Fase 5: Benchmarking y Evaluación
     Diseño de preguntas de prueba           :f5a, 2026-03-30, 2026-04-05
@@ -300,7 +324,8 @@ gantt
 | **1. Investigación y Diseño** | 1–4 | Ene 26 – Feb 20 | Propuesta de proyecto, ficha, análisis de requisitos, selección de tecnologías (Ollama, LangChain, ChromaDB, sentence-transformers) | ✅ Completada | Todos |
 | **2. Prototipado Backend** | 5–7 | Feb 23 – Mar 13 | Web scraping de normatividad Uninorte, pipeline de ingesta PDF→chunks→ChromaDB, configuración Ollama + prompt engineering, API REST con FastAPI | ✅ Completada | Todos |
 | **3. Prototipado Frontend** | 6–8 | Mar 2 – Mar 20 | Inicialización Next.js + React + Tailwind CSS, integración frontend↔backend via proxy API, interfaz de chat con selector de modelos SLM | ✅ Completada | Todos |
-| **4. Despliegue** | 8–9 | Mar 16 – Mar 27 | Configuración del servidor de despliegue (cluster/Azure/OpenLab), despliegue del stack completo (Ollama + backend + frontend), pruebas en entorno de producción | 🔄 En curso | Todos |
+| **4. Despliegue** | 8–9 | Mar 16 – Mar 27 | Configuración de **Orange Pi 5 Pro / Plus**, despliegue distribuido (Backend/Frontend en OPi, Ollama en PC externo), optimización para arquitectura ARM64 | ✅ Completada | Todos |
+
 | **5. Benchmarking y Evaluación** | 10–12 | Mar 30 – Abr 17 | Diseño del set de preguntas de prueba con ground truth, ejecución de benchmarks multi-modelo (qwen2.5:3b, llama3.2, phi3, etc.), análisis de métricas (latencia, precisión, alucinaciones, tok/s) | ⏳ Pendiente | Todos |
 | **6. Optimización** | 12–13 | Abr 13 – Abr 24 | Optimización de prompts y parámetros de retrieval, ajuste fino basado en resultados del benchmarking, pruebas de estrés y rendimiento | ⏳ Pendiente | Todos |
 | **7. Documentación Final** | 14–15 | Abr 27 – May 8 | Documentación técnica completa, elaboración del informe final, preparación de la sustentación | ⏳ Pendiente | Todos |
