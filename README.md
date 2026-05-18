@@ -31,9 +31,9 @@ El proyecto abarca el ciclo de vida completo del sistema: desde un pipeline auto
 
 | Nombre | GitHub |
 |---|---|
-| Nombre Apellido | [@imcarlosmsX](https://github.com/imcarlosmsX) |
-| Nombre Apellido | [@jesusdlacrz](https://github.com/jesusdlacrz) |
-| Nombre Apellido | [@Juanjo1217](https://github.com/Juanjo1217) |
+| Carlos Mendoza Sandoval | [@imcarlosmsX](https://github.com/imcarlosmsX) |
+| Jesus de la Cruz Bonett | [@jesusdlacrz](https://github.com/jesusdlacrz) |
+| Juan Aragón Amador | [@Juanjo1217](https://github.com/Juanjo1217) |
 
 ## Tutores
 
