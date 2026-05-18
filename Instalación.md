@@ -6,6 +6,7 @@
 |---|---|---|
 | RAM | 8 GB | 16 GB |
 | CPU | 2 cores | 4 cores |
+| GPU | *Puede funcionar con iGPU* | GPU **NVIDIA** dedicada |
 | Disco libre | 20 GB | 32 GB |
 | SO | Linux / Windows con WSL2 / macOS | Linux |
 
