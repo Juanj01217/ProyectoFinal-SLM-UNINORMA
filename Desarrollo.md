@@ -282,4 +282,4 @@ Para futuros grupos de investigación, se sugiere:
 
 * [Next.js Route Handlers (Proxy)](https://nextjs.org/docs/app/api-reference/file-conventions/route)
 
-* *Para detalles teóricos, métricas esperadas y contexto del negocio, consultar el archivo [Informe.md](https://github.com/openlabun/UNINORMA/blob/informefinal/Informe.md) en la raíz del proyecto.*
+* *Para detalles teóricos, métricas esperadas y contexto del negocio, consultar el archivo [Informe.md](./Informe.md) en la raíz del proyecto.*
