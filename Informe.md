@@ -22,14 +22,9 @@ Para abordar estas problemáticas, el presente proyecto propone el diseño e imp
 
 Para comprender el funcionamiento de UNINORMA, es necesario precisar los conceptos tecnológicos que sustentan la arquitectura de inteligencia artificial local:
 
-### 2.1. Modelos de Lenguaje Grande (LLMs)
-Un Modelo de Lenguaje Grande (LLM, por sus siglas en inglés) es un sistema de inteligencia artificial basado en arquitecturas de redes neuronales profundas—típicamente de tipo Transformer—diseñado para procesar, comprender y generar texto en lenguaje natural. Estos modelos son entrenados con volúmenes masivos de datos textuales, lo que les permite capturar estructuras lingüísticas complejas, contextos, semántica y relaciones entre palabras.
+### 2.1. Modelos de Lenguaje pequeño (SLM)
 
-En términos operativos, un LLM funciona bajo un principio probabilístico: calcula y predice cuál es el elemento textual (token) más adecuado para continuar una secuencia dada a partir del contexto proporcionado en la consulta (prompt). En el ámbito institucional, su capacidad para realizar tareas avanzadas como resúmenes, traducciones y respuestas a preguntas los convierte en el motor de razonamiento de las interfaces conversacionales modernas.
-
-### 2.2. Modelos de Lenguaje pequeño (SLM)
-
-Los **Small Language Models (SLM)** son modelos de lenguaje diseñados para comprender y generar texto en lenguaje natural con un número reducido de parámetros (generalmente entre 1B y 7B) en comparación con los Large Language Models (LLMs) como GPT-4 o Claude. 
+Los **Small Language Models (SLM)** son modelos de lenguaje diseñados para comprender y generar texto en lenguaje natural con un número reducido de parámetros (*"debido a las variaciones entre los rangos que se mencionan en distintos articulos [1], [2], [3], [4], [5]"* el rango estaría generalmente entre 1B y 15B) en comparación con los Large Language Models (LLMs) como GPT-4 o Claude. 
 
 A diferencia de los LLMs, cuyo objetivo es cubrir conocimiento general masivo, los SLMs se centran en:
 - **Eficiencia:** Requieren significativamente menos memoria RAM/VRAM y potencia de cómputo.
@@ -38,6 +33,11 @@ A diferencia de los LLMs, cuyo objetivo es cubrir conocimiento general masivo, l
 - **Baja Latencia:** Su tamaño compacto permite una inferencia más rápida, ideal para aplicaciones en tiempo real y dispositivos edge.
 
 En este proyecto, utilizamos el modelo **Qwen 2.5:1.5b**, el cual ofrece un equilibrio excepcional entre precisión lingüística en español y velocidad de procesamiento.
+
+### 2.2. Modelos de Lenguaje Grande (LLMs)
+Un Modelo de Lenguaje Grande (LLM, por sus siglas en inglés) es un sistema de inteligencia artificial basado en arquitecturas de redes neuronales profundas—típicamente de tipo Transformer—diseñado para procesar, comprender y generar texto en lenguaje natural. Estos modelos son entrenados con volúmenes masivos de datos textuales, lo que les permite capturar estructuras lingüísticas complejas, contextos, semántica y relaciones entre palabras.
+
+En términos operativos, un LLM funciona bajo un principio probabilístico: calcula y predice cuál es el elemento textual (token) más adecuado para continuar una secuencia dada a partir del contexto proporcionado en la consulta (prompt). En el ámbito institucional, su capacidad para realizar tareas avanzadas como resúmenes, traducciones y respuestas a preguntas los convierte en el motor de razonamiento de las interfaces conversacionales modernas.
 
 ### 2.3. Retrieval-Augmented Generation (RAG)
 
@@ -207,7 +207,7 @@ Para cada decisión tecnológica clave del sistema, se evaluaron múltiples alte
 El sistema adopta una arquitectura cliente-servidor orientada a microservicios en un entorno de ejecución 100% local (_Local-first / On-Premise_). El desacoplamiento entre componentes se logra mediante el uso de las abstracciones de LangChain como capa de orquestación intermedia, lo que permite la sustitución independiente de cualquier componente sin afectar al resto de la arquitectura.
 
 **Diagrama de Arquitectura del Sistema:**
-<img width="1277" height="597" alt="Arquitectura del Sistema" src="https://github.com/user-attachments/assets/34f04d49-c2a7-4caf-9913-a8ec42761b49" />
+<img width="784" height="753" alt="image" src="https://github.com/user-attachments/assets/ba249ff2-a50c-4c4a-a403-b347f0df8303" />
 
 **Componentes del sistema e interacción:**
 
@@ -269,6 +269,11 @@ El backend está organizado en una capa de módulos bajo el directorio `src/`, c
 
 El frontend está organizado en cuatro componentes React reutilizables: `ChatMessage.tsx` (renderiza mensajes con animación de escritura para el estado de carga), `ModelSelector.tsx` (desplegable dinámicamente poblado desde `/models`), `SourceCard.tsx` (muestra fuentes como _chips_ con nombre de documento y página) y `StatusBar.tsx` (indicadores de estado del sistema mediante consultas periódicas a `/health`).
 
+La interacción de estos componentes está representada por el siguiente diagrama:
+
+<img width="1277" height="597" alt="image" src="https://github.com/user-attachments/assets/34f04d49-c2a7-4caf-9913-a8ec42761b49" />
+
+
 ### 8.3. Integraciones
 
 La integración más crítica del sistema es la comunicación entre el backend Python y el motor de inferencia **Ollama**. En la arquitectura definitiva, el backend se conecta a una instancia de Ollama instanciada en un **ordenador aparte**. Esta conexión se parametriza mediante la variable de entorno `OLLAMA_BASE_URL`, apuntando a la dirección IP privada del servidor de inferencia (ej. `http://192.168.1.50:11434`). Esta decisión de diseño permite repartir la carga de rendimiento, dejando que la Orange Pi gestione exclusivamente la lógica de negocio y la recuperación vectorial, mientras que el PC externo asume el costo computacional de la inferencia del modelo **Qwen 2.5:1.5b**.
@@ -278,19 +283,24 @@ La integración con **ChromaDB** es de tipo embebido: la base de datos vectorial
 
 La integración con **HuggingFace** para el modelo de embeddings ocurre en el momento de construcción del contenedor Docker del backend: el `Dockerfile` ejecuta un script de precarga del modelo `paraphrase-multilingual-MiniLM-L12-v2` durante la fase de _build_, evitando descargas en tiempo de ejecución. Esto garantiza que el sistema arranque en modo _offline_ completo una vez que la imagen Docker ha sido construida. El pipeline de ingesta se integra adicionalmente con el portal web de la Universidad del Norte mediante las dependencias `requests>=2.28.0` y `beautifulsoup4>=4.12.0`, utilizando selectores CSS específicos del CMS Liferay (`div.journal-content-article`, `div.c_cr`, `article`) para extraer el contenido relevante de las páginas de normatividad.
 
+
 ---
 
-## 9. Plan de Pruebas
 
-### 9.1. Pruebas por Componentes
+## 9. Despliegue y Operación
+
+
+## 10. Validación
+
+### 10.1. Pruebas por Componentes
 
 El plan de pruebas por componentes tiene como objetivo verificar el correcto funcionamiento de cada módulo del sistema de forma aislada, identificando defectos antes de que se propaguen a las capas superiores de la arquitectura. Para el módulo `pdf_extractor.py`, las pruebas unitarias verifican tres casos: la extracción correcta de texto seleccionable (PDF digital), la activación y correcto funcionamiento del modo OCR ante PDFs escaneados (condición: texto extraído < 50 caracteres sin OCR), y la correcta limpieza del texto resultante (normalización de espacios, eliminación de artefactos de codificación). El criterio de éxito es la extracción del 100% del contenido textual esperado para un conjunto de documentos de referencia con _ground truth_ conocido.
 
 Para el módulo `text_chunker.py`, las pruebas unitarias validan que: (a) el número de chunks generados para un documento de texto conocido sea consistente con los parámetros de ventana (1.000 tokens) y solapamiento (200 tokens); (b) los metadatos adjuntos a cada chunk contengan los campos requeridos (`source`, `title`, `page`, `chunk_index`); y (c) no se generen chunks con longitud cero ni chunks que excedan el tamaño máximo configurado. Para el módulo `embeddings.py`, se verifica que el vector generado para una consulta de prueba tenga la dimensionalidad correcta (384 dimensiones para `MiniLM-L12-v2`) y que la similitud del coseno entre embeddings de frases semánticamente similares sea significativamente mayor que entre frases no relacionadas.
 
 Para el módulo `rag_chain.py`, las pruebas unitarias utilizan un conjunto de contextos inyectados de forma artificial (sin invocar ChromaDB ni Ollama reales) para verificar el comportamiento del _prompt template_ y el _parser_ de salida. Se prueba específicamente el caso en que el contexto recuperado no contiene información relevante: el sistema debe generar la respuesta de rechazo predefinida en lugar de intentar sintetizar una respuesta vacía o incorrecta. El módulo `benchmark/metrics.py` es también sometido a pruebas unitarias que verifican la correcta implementación de las métricas de evaluación (_retrieval hit rate_, _answer relevancy_, _faithfulness_) contra valores calculados manualmente para un conjunto pequeño de casos de prueba conocidos.
-
-### 9.2. Pruebas de Integración
+    
+### 10.2. Pruebas de Integración
 
 Las pruebas de integración verifican la interacción correcta entre los componentes del sistema a través de sus interfaces definidas, con especial énfasis en los flujos de datos extremo a extremo. El módulo de _benchmarking_ (`benchmark/run_benchmark.py`) constituye el principal instrumento de prueba de integración: ejecuta las 40+ preguntas del archivo `test_questions.json` contra el sistema completo (ChromaDB + LangChain + Ollama) y mide las métricas de recuperación y generación. Cada pregunta en el conjunto de prueba tiene asociado un `expected_source` (el documento correcto del cual debe recuperarse información), una `category` (área normativa) y un nivel de `difficulty` (fácil, medio, difícil). El criterio de éxito de las pruebas de integración del pipeline RAG es una tasa de recuperación correcta (_retrieval hit rate_) superior al 85% en el Top-3 de resultados.
 
@@ -298,7 +308,7 @@ Para los _endpoints_ de la API, las pruebas de integración verifican los cuatro
 
 Las pruebas de integración también incluyen la verificación del flujo de carga y descarga de modelos mediante el _endpoint_ `POST /models/load`. Se verifica que, tras solicitar la carga de un modelo alternativo (ej. `llama3.2:3b`), las siguientes consultas sean efectivamente atendidas por ese modelo, y que el _endpoint_ `/health` refleje el cambio. El pipeline completo de ingesta es igualmente sometido a pruebas de integración: se ejecuta el script `ingest.py` sobre un subconjunto controlado de documentos y se verifica que el número de chunks indexados en ChromaDB sea consistente con el total esperado, que los metadatos de todos los chunks sean correctos y que el motor de recuperación devuelva resultados relevantes para preguntas de control.
 
-### 9.3. Pruebas de Usabilidad
+### 10.3. Pruebas de Usabilidad
 
 Las pruebas de usabilidad tienen como objetivo evaluar la efectividad del sistema desde la perspectiva del usuario final —estudiantes y miembros de la comunidad académica de la Universidad del Norte—, más allá de la corrección técnica verificada en las pruebas anteriores. La metodología adoptada es una evaluación heurística combinada con pruebas de pensamiento en voz alta (_think-aloud protocol_): se reclutará un grupo de al menos 8 participantes representativos del usuario objetivo (estudiantes de diferentes programas académicos, con distinto nivel de familiaridad con herramientas digitales) para realizar un conjunto de tareas de consulta normativa predefinidas utilizando el asistente.
 
@@ -308,85 +318,21 @@ Los criterios de aceptación de las pruebas de usabilidad son: (a) al menos el 7
 
 ---
 
-## 10. Cronograma de Trabajo
 
-**Equipo:** Carlos Mendoza, Jesús De la Cruz, Juan José Aragón
-**Periodo:** Semestre 2026-1 (Ene 26 – May 15, 16 semanas) | Sustentación: May–Jun 2026
-
-```mermaid
-gantt
-    title Cronograma del Proyecto - Asistente RAG + SLM Uninorte
-    dateFormat  YYYY-MM-DD
-    axisFormat  %b %d
-
-    section Fase 1: Investigación y Diseño
-    Propuesta y ficha de proyecto           :done, f1a, 2026-01-26, 2026-02-06
-    Análisis de requisitos                  :done, f1b, 2026-02-02, 2026-02-13
-    Selección de stack tecnológico          :done, f1c, 2026-02-09, 2026-02-20
-
-    section Fase 2: Prototipado Backend
-    Web scraping y adquisición de datos     :done, f2a, 2026-02-23, 2026-03-02
-    Pipeline de ingesta (PDF→ChromaDB)      :done, f2b, 2026-02-23, 2026-03-07
-    Configuración Ollama + prompts          :done, f2c, 2026-03-03, 2026-03-10
-    API REST (FastAPI)                      :done, f2d, 2026-03-03, 2026-03-13
-
-    section Fase 3: Prototipado Frontend
-    Inicialización Next.js + React          :done, f3a, 2026-03-02, 2026-03-07
-    Integración frontend-backend            :done, f3b, 2026-03-07, 2026-03-14
-    UI/UX del chat y selector de modelos    :done, f3c, 2026-03-10, 2026-03-20
-
-    section Fase 4: Despliegue
-    Configuración de Orange Pi 5           :done, f4a, 2026-03-16, 2026-03-22
-    Despliegue distribuido (OPi + PC)       :done, f4b, 2026-03-20, 2026-03-25
-    Pruebas en entorno Orange Pi            :done, f4c, 2026-03-23, 2026-03-27
-
-
-    section Fase 5: Benchmarking y Evaluación
-    Diseño de preguntas de prueba           :f5a, 2026-03-30, 2026-04-05
-    Ejecución de benchmarks multi-modelo    :f5b, 2026-04-03, 2026-04-12
-    Análisis de métricas y resultados       :f5c, 2026-04-10, 2026-04-17
-
-    section Fase 6: Optimización
-    Optimización de prompts y retrieval     :f6a, 2026-04-13, 2026-04-19
-    Ajuste fino basado en benchmarks        :f6b, 2026-04-17, 2026-04-22
-    Pruebas de estrés y rendimiento         :f6c, 2026-04-20, 2026-04-24
-
-    section Fase 7: Documentación Final
-    Documentación técnica                   :f7a, 2026-04-27, 2026-05-03
-    Informe final del proyecto              :f7b, 2026-04-30, 2026-05-06
-    Preparación de la sustentación          :f7c, 2026-05-04, 2026-05-08
-
-    section Fase 8: Sustentación
-    Defensa del proyecto                    :milestone, f8a, 2026-05-15, 0d
-```
-
-### Detalle por fase
-
-| Fase | Semanas | Periodo | Actividades | Estado | Responsable |
-|------|---------|---------|-------------|--------|-------------|
-| **1. Investigación y Diseño** | 1–4 | Ene 26 – Feb 20 | Propuesta de proyecto, ficha, análisis de requisitos, selección de tecnologías (Ollama, LangChain, ChromaDB, sentence-transformers) | ✅ Completada | Todos |
-| **2. Prototipado Backend** | 5–7 | Feb 23 – Mar 13 | Web scraping de normatividad Uninorte, pipeline de ingesta PDF→chunks→ChromaDB, configuración Ollama + prompt engineering, API REST con FastAPI | ✅ Completada | Todos |
-| **3. Prototipado Frontend** | 6–8 | Mar 2 – Mar 20 | Inicialización Next.js + React + Tailwind CSS, integración frontend↔backend via proxy API, interfaz de chat con selector de modelos SLM | ✅ Completada | Todos |
-| **4. Despliegue** | 8–9 | Mar 16 – Mar 27 | Configuración de **Orange Pi 5 Pro / Plus**, despliegue distribuido (Backend/Frontend en OPi, Ollama en PC externo), optimización para arquitectura ARM64 | ✅ Completada | Todos |
-
-| **5. Benchmarking y Evaluación** | 10–12 | Mar 30 – Abr 17 | Diseño del set de preguntas de prueba con ground truth, ejecución de benchmarks multi-modelo (qwen2.5:3b, llama3.2, phi3, etc.), análisis de métricas (latencia, precisión, alucinaciones, tok/s) | ⏳ Pendiente | Todos |
-| **6. Optimización** | 12–13 | Abr 13 – Abr 24 | Optimización de prompts y parámetros de retrieval, ajuste fino basado en resultados del benchmarking, pruebas de estrés y rendimiento | ⏳ Pendiente | Todos |
-| **7. Documentación Final** | 14–15 | Abr 27 – May 8 | Documentación técnica completa, elaboración del informe final, preparación de la sustentación | ⏳ Pendiente | Todos |
-| **8. Sustentación** | 16+ | May – Jun 2026 | Defensa del proyecto ante el jurado | ⏳ Pendiente | Todos |
+## 11. Resultados y discución
 
 ---
-
-## 11. Diagramas
-
-<img width="784" height="753" alt="image" src="https://github.com/user-attachments/assets/ba249ff2-a50c-4c4a-a403-b347f0df8303" />
-
-<img width="1277" height="597" alt="image" src="https://github.com/user-attachments/assets/34f04d49-c2a7-4caf-9913-a8ec42761b49" />
-
-<img width="1344" height="553" alt="image" src="https://github.com/user-attachments/assets/973cd97a-c6cf-406e-b464-5cbacd7af30f" />
-
----
-
 ## 12. Referencias
+
+- [1] Red Hat, “¿Qué diferencia hay entre los modelos de lenguaje grandes (LLM) y los pequeños (SLM)?,” Red Hat, 2024. [En línea]. Disponible en: https://www.redhat.com/es/topics/ai/llm-vs-slm. [Accedido: 22-may-2026].
+
+- [2] IBM, “¿Qué son los Small Language Models (SLM)?,” IBM Think Topics, 2024. [En línea]. Disponible en: https://www.ibm.com/es-es/think/topics/small-language-models. [Accedido: 22-may-2026].
+
+- [3] J. Jokah, “The rise of Small Language Models (SLMs),” Hugging Face Blog, 2024. [En línea]. Disponible en: https://huggingface.co/blog/jjokah/small-language-model. [Accedido: 22-may-2026].
+
+- [4] Raona, “Small Language Models (SLM): Modelos de Inteligencia Artificial eficientes,” Raona, 2024. [En línea]. Disponible en: https://raona.com/small-language-models/. [Accedido: 22-may-2026].
+
+- [5] DataCamp, “Los mejores modelos de lenguaje pequeños (SLM) que debes conocer,” DataCamp Blog, 2024. [En línea]. Disponible en: https://www.datacamp.com/es/blog/top-small-language-models. [Accedido: 22-may-2026].
 
 - Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., ... & Kiela, D. (2020). Retrieval-augmented generation for knowledge-intensive nlp tasks. *Advances in Neural Information Processing Systems*, 33, 9459–9474.
 
