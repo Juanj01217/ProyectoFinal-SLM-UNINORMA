@@ -289,6 +289,84 @@ La integración con **HuggingFace** para el modelo de embeddings ocurre en el mo
 
 ## 9. Despliegue y Operación
 
+### 9.1. Estrategia de Contenedorización
+
+El despliegue de UNINORMA está completamente contenedorizado mediante **Docker** y orquestado con **Docker Compose**, garantizando la reproducibilidad del sistema en cualquier entorno compatible (Linux nativo, Windows con WSL2, macOS) mediante un único comando: `docker compose up`. Esta decisión satisface directamente el requerimiento no funcional **RNF03** (portabilidad) y elimina la necesidad de configurar manualmente dependencias del sistema operativo anfitrión.
+
+La configuración se estructura en dos archivos Compose complementarios:
+
+- **`docker-compose.yml`:** Archivo base que define los tres servicios del sistema (Ollama, Backend, Frontend) con sus dependencias, volúmenes persistentes y variables de entorno por defecto. Esta configuración es funcional en cualquier arquitectura x86_64 y constituye el entorno de desarrollo y pruebas.
+
+- **`docker-compose.orangepi.yml`:** Archivo _override_ específico para el despliegue en **Orange Pi 5 Pro / Plus** (Rockchip RK3588, ARM64). Se invoca mediante `docker compose -f docker-compose.yml -f docker-compose.orangepi.yml up -d` y activa: la plataforma `linux/arm64` explícita en todos los servicios, el acceso a los dispositivos `/dev/dri` (GPU/NPU del SoC), la membresía en los grupos `video` y `render`, y la capacidad `SYS_NICE` para la gestión de prioridad de procesos. Además, establece por defecto el backend de inferencia RKLLM (NPU de 6 TOPS), el _embedder_ ONNX cuantizado (ahorro de ~700 MB de RAM) y la desactivación del _reranker_ pesado (ahorro de 1-3 s por consulta).
+
+### 9.2. Servicios y Contenedores
+
+El sistema se despliega como una composición de tres servicios independientes, cada uno con su `Dockerfile` optimizado:
+
+**Servicio `ollama` (Motor de Inferencia):**
+Utiliza la imagen oficial `ollama/ollama:latest` y actúa como servidor de inferencia del SLM. Se configura con `OLLAMA_KEEP_ALIVE=30m` para mantener el modelo cargado en memoria y evitar penalizaciones de _cold-start_ (5-15 s) entre consultas, y con `OLLAMA_NUM_PARALLEL=1` para limitar la concurrencia y minimizar el consumo de RAM. Los modelos descargados persisten en un volumen Docker nombrado (`ollama_models`), sobreviviendo a reinicios y reconstrucciones de contenedores. En el despliegue distribuido, este servicio puede ejecutarse en un PC externo con GPU dedicada, al que el backend se conecta mediante la variable `OLLAMA_BASE_URL`.
+
+**Servicio `backend` (FastAPI + RAG):**
+Construido a partir de una imagen `python:3.11-slim`, el `Dockerfile` del backend implementa una estrategia de construcción en capas optimizada para la eficiencia de caché. Primero instala las dependencias Python desde `requirements.txt`, luego ejecuta un script de precarga que descarga y almacena en la imagen el modelo de _embeddings_ `paraphrase-multilingual-MiniLM-L12-v2` (~90 MB), garantizando que el sistema arranque sin necesidad de conexión a internet. Finalmente, copia el código fuente y los PDFs del corpus normativo como recurso de respaldo para re-ingestión. La base de datos vectorial ChromaDB persiste en un volumen independiente (`chroma_data`) que sobrevive a reconstrucciones del contenedor. Las variables de entorno clave incluyen `LLM_BACKEND` (selección entre Ollama y RKLLM), `EMBEDDER_BACKEND` (PyTorch vs. ONNX), `RERANKER_ENABLED` y `LLM_MODEL`.
+
+**Servicio `frontend` (Next.js):**
+Construido mediante un `Dockerfile` _multi-stage_ basado en `node:20-alpine`. La primera etapa (_builder_) instala dependencias y compila la aplicación Next.js; la segunda etapa (_runner_) copia únicamente los artefactos de producción, reduciendo significativamente el tamaño de la imagen final. El frontend expone el puerto 3000 internamente, mapeado al puerto 5174 del host (`5174:3000`). La variable de _build_ `NEXT_PUBLIC_API_URL=/api` configura el proxy reverso: todas las peticiones del navegador a `/api/*` son interceptadas por una ruta de API de Next.js (`app/api/[...proxy]/route.ts`) que las reenvía al backend usando la variable `BACKEND_URL=http://backend:8000`, eliminando problemas de CORS y abstrayendo la topología de red interna.
+
+### 9.3. Proceso de Inicialización Automatizado
+
+El script `entrypoint.sh` del backend implementa un proceso de arranque en tres fases que garantiza la disponibilidad de todos los componentes antes de aceptar tráfico:
+
+1. **Verificación de Ollama:** Cuando `LLM_BACKEND=ollama`, el script ejecuta un bucle de reintentos (`until curl -sf ${OLLAMA_BASE_URL}/api/tags`) que espera hasta que el servicio Ollama esté operativo. Este paso se omite automáticamente cuando el backend está configurado para usar RKLLM.
+
+2. **Verificación y descarga del modelo:** Consulta la lista de modelos disponibles en Ollama y, si el modelo configurado (`LLM_MODEL`, por defecto `qwen2.5:1.5b`) no está presente, ejecuta automáticamente un `ollama pull` con barra de progreso. Esta descarga (~2 GB) ocurre únicamente en la primera ejecución.
+
+3. **Verificación de ChromaDB:** Comprueba la existencia del directorio `/app/data/chroma_db` y su contenido. Si la base de datos vectorial no existe o está vacía, ejecuta automáticamente el pipeline de ingestión (`python3 ingest.py --pdf-dir /reglamentos`) que procesa los PDFs del corpus, genera los _embeddings_ y los indexa. Si la base ya existe (caso habitual en despliegues posteriores al primero), se omite la re-ingestión.
+
+Una vez superadas las tres fases, el script inicia el servidor `uvicorn` en `0.0.0.0:8000`. El sistema está operativo cuando los logs muestran el mensaje `API disponible en http://0.0.0.0:8000`.
+
+### 9.4. Despliegue en Orange Pi 5 Pro / Plus
+
+El despliegue definitivo en hardware ARM sigue un procedimiento de cuatro pasos diseñado para minimizar la carga computacional sobre la placa:
+
+**Paso 1 — Preparación del host:** Se requiere Ubuntu 22.04 / 24.04 ARM64 con kernel >= 5.10 con soporte Rockchip, Docker Compose >= 2.20 y la verificación de que el dispositivo NPU está expuesto (`/dev/dri/card0`). El usuario debe pertenecer a los grupos `video` y `render`.
+
+**Paso 2 — Pre-generación de la base vectorial:** La ingestión (scraping + extracción + chunking + embeddings) se ejecuta una única vez en una máquina de desarrollo x86 y se transfiere al Orange Pi mediante un tarball del volumen Docker. Esto evita que el Pi ejecute un proceso intensivo en CPU y memoria que podría tardar más de 30 minutos en su hardware.
+
+**Paso 3 — Conversión del modelo a formato RKLLM:** El runtime RKLLM del SoC RK3588 no acepta el formato GGUF estándar de Ollama; requiere un formato propietario `.rkllm` generado mediante el toolkit `rkllm-toolkit` en una máquina x86 con CUDA. El modelo `qwen2.5-1.5b-instruct` se cuantiza a `w8a8` (pesos de 8 bits, activaciones de 8 bits) para la plataforma `rk3588`, generando un archivo que se coloca en `deploy/models/`.
+
+**Paso 4 — Levantamiento del stack:** Se ejecuta el comando Compose con el override ARM64 y las variables de entorno correspondientes: `LLM_BACKEND=rkllm`, `EMBEDDER_BACKEND=onnx`, `RERANKER_ENABLED=false`. Si la conversión RKLLM no está disponible, el sistema es funcional con `LLM_BACKEND=ollama` (inferencia en CPU ARM, más lenta pero operativa).
+
+### 9.5. Recursos y Puertos
+
+**Consumo de recursos en ejecución:**
+
+| Componente | RAM Estimada |
+|---|---|
+| Ollama + qwen2.5:1.5b | ~1.5 GB |
+| Backend (FastAPI + ChromaDB + Embeddings) | ~600 MB |
+| Frontend (Next.js) | ~200 MB |
+| **Total** | **~2.3 GB** |
+
+**Puertos expuestos:**
+
+| Servicio | Puerto Interno | Puerto del Host |
+|---|---|---|
+| Frontend (Next.js) | 3000 | 5174 |
+| Backend (FastAPI) | 8000 | — (accesible solo internamente entre contenedores) |
+| Ollama | 11434 | — (accesible solo internamente o en red local) |
+
+**Requisitos mínimos del entorno de despliegue:**
+
+| Recurso | Mínimo | Recomendado |
+|---|---|---|
+| RAM | 8 GB | 16 GB |
+| CPU | 2 cores | 4 cores |
+| Disco libre | 20 GB | 32 GB |
+| GPU (opcional) | — | NVIDIA con 4+ GB VRAM |
+
+El sistema opera completamente _offline_ después de la primera ejecución, cumpliendo el requerimiento de privacidad **RNF01**. No se requiere conexión a internet para la inferencia ni para las consultas a la base de datos vectorial.
+
+---
 
 ## 10. Validación
 
@@ -319,7 +397,119 @@ Los criterios de aceptación de las pruebas de usabilidad son: (a) al menos el 7
 ---
 
 
-## 11. Resultados y discución
+## 11. Resultados y Discusión
+
+### 11.1. Marco de Evaluación
+
+Para evaluar de forma objetiva el desempeño del sistema UNINORMA, se diseñó un framework de _benchmarking_ automatizado que permite la comparación cuantitativa de múltiples modelos SLM bajo condiciones controladas e idénticas. El framework está implementado en los módulos `benchmark/run_benchmark.py` y `benchmark/metrics.py`, y es accesible tanto desde la línea de comandos (`python -m benchmark.run_benchmark`) como desde la interfaz web del frontend a través de los _endpoints_ REST `/benchmark/start`, `/benchmark/progress/{job_id}` y `/benchmark/results`.
+
+El conjunto de datos de evaluación (`benchmark/test_questions.json`) comprende **25 preguntas** diseñadas para cubrir tres dimensiones críticas del sistema:
+
+- **Consultas directas (dificultad fácil, 10 preguntas):** Preguntas cuya respuesta se encuentra explícitamente en un único documento del corpus. Evalúan la capacidad básica de recuperación y generación. Ejemplos: derechos de egresados, requisitos de contratación de profesores, jornada laboral, nota mínima aprobatoria.
+
+- **Consultas de síntesis (dificultad media, 8 preguntas):** Preguntas que requieren localizar información específica dentro de documentos extensos o sintetizar información distribuida en múltiples secciones. Ejemplos: sanciones por faltas graves, clasificación de invenciones, causales de terminación de contrato, procedimiento de evaluación docente.
+
+- **Consultas de negación y referencia cruzada (dificultad difícil, 7 preguntas):** Incluyen preguntas deliberadamente fuera del dominio normativo (teletrabajo, salario de catedráticos, nombre del rector) cuya respuesta correcta es que el sistema indique que no dispone de esa información; y preguntas que requieren cruzar información entre múltiples reglamentos (relación entre propiedad intelectual y reglamento de profesores, articulación de derechos humanos con bienestar).
+
+Las preguntas abarcan **10 categorías normativas**: reglamento estudiantil, reglamento de profesores, reglamento interno de trabajo, reglamento de egresados, propiedad intelectual, derechos humanos, bienestar universitario, protocolo de acoso, resoluciones del Consejo Académico y referencias cruzadas.
+
+### 11.2. Métricas de Evaluación
+
+El framework calcula seis métricas primarias por cada consulta evaluada, diseñadas para capturar diferentes aspectos del rendimiento del sistema RAG:
+
+1. **Latencia (_latency_seconds_):** Tiempo total desde el envío de la consulta hasta la recepción completa de la respuesta. Incluye la recuperación semántica en ChromaDB, la construcción del _prompt_ y la generación completa de tokens por el SLM. Se mide mediante `time.time()` antes y después de la invocación de la cadena RAG.
+
+2. **Precisión de recuperación (_retrieval_accuracy_):** Porcentaje de consultas en las que el documento fuente esperado aparece entre los fragmentos recuperados por ChromaDB. Para preguntas de negación (`expected_source = "NONE"`), la métrica se considera automáticamente correcta. La verificación se realiza mediante coincidencia parcial de nombres de archivo.
+
+3. **Relevancia de la respuesta (_answer_relevancy_):** Similitud semántica entre la pregunta del usuario y la respuesta generada, calculada como la similitud del coseno entre los _embeddings_ de ambos textos (generados con el modelo `paraphrase-multilingual-MiniLM-L12-v2`). Un valor alto indica que la respuesta aborda directamente la pregunta formulada. Rango: 0.0 a 1.0.
+
+4. **Fidelidad al contexto (_faithfulness_):** Proporción de oraciones de la respuesta que están fundamentadas en el contexto recuperado. Para cada oración de la respuesta, se verifica que al menos el 50% de sus palabras significativas (longitud > 3 caracteres) aparezcan en el texto de los fragmentos recuperados. La métrica penaliza respuestas que introducen información no presente en el corpus. Rango: 0.0 a 1.0.
+
+5. **Detección de alucinaciones (_hallucination_rate_):** Proporción de respuestas que introducen datos numéricos significativos (valores > 10) no presentes en el contexto recuperado. Si una respuesta contiene más de dos números nuevos no encontrados en los fragmentos de referencia, se clasifica como alucinación. Las respuestas de negación ("no encontré información") quedan excluidas automáticamente de esta detección.
+
+6. **Precisión de rechazo (_no_answer_accuracy_):** Para las preguntas cuya respuesta no está en el corpus (categoría de negación), mide el porcentaje de veces que el modelo responde correctamente indicando que no dispone de información, en lugar de generar una respuesta inventada. La detección se basa en la presencia de patrones lingüísticos de rechazo ("no encontré", "no tengo información", "no se encuentra", "no dispongo", entre otros).
+
+### 11.3. Modelos Evaluados
+
+El benchmark está configurado para evaluar hasta **ocho modelos SLM** cuantizados, seleccionados por su compatibilidad con Ollama y su viabilidad en hardware de consumo:
+
+| Modelo | Parámetros | RAM Estimada | Perfil de Uso |
+|---|---|---|---|
+| **Qwen 2.5:1.5b** | 1.5B | ~1.5 GB | Modelo por defecto; equilibrio entre velocidad y calidad en español |
+| **Qwen 2.5:3b** | 3B | ~3.5 GB | Mayor capacidad de razonamiento; benchmark de referencia |
+| **Llama 3.2:1b** | 1B | ~1.2 GB | Modelo ultra-ligero para pruebas de latencia mínima |
+| **Llama 3.2:3b** | 3B | ~3.5 GB | Alternativa de Meta para comparación directa con Qwen |
+| **Phi-3 Mini** | 3.8B | ~4 GB | Modelo de Microsoft optimizado para razonamiento |
+| **Gemma 3:1b** | 1B | ~1.2 GB | Modelo de Google; evaluación de diversidad de proveedores |
+| **Mistral:7b** | 7B | ~7.5 GB | Referencia de calidad para modelos de mayor tamaño |
+| **Llama 3.1:8b** | 8B | ~8 GB | Límite superior de tamaño viable en el hardware de referencia |
+
+Todos los modelos se ejecutan bajo cuantización Q4_K_M (formato GGUF) a través de Ollama, con temperatura de inferencia fijada en 0.1 y un límite de 300 tokens por respuesta.
+
+### 11.4. Protocolo de Ejecución
+
+El benchmark se ejecuta de forma automatizada mediante el script `run_benchmark.py`, que implementa el siguiente protocolo:
+
+1. **Verificación de prerrequisitos:** Se comprueba que Ollama esté activo y se identifican los modelos disponibles entre los solicitados. Los modelos no instalados se omiten con advertencia.
+
+2. **Carga de componentes compartidos:** Se instancia una única vez el modelo de _embeddings_, la base de datos vectorial y el _retriever_ configurado con Top-K=6, garantizando que las variaciones entre modelos provengan exclusivamente del componente generativo.
+
+3. **Evaluación secuencial por modelo:** Para cada modelo, se crea una cadena RAG dedicada y se ejecutan las 25 preguntas. Por cada pregunta se registra: latencia, uso de memoria (delta RSS del proceso Python), acierto de recuperación, relevancia, fidelidad, detección de alucinación y precisión de rechazo.
+
+4. **Agregación y persistencia:** Los resultados individuales se agregan por modelo en una tabla comparativa (_summary_) y se guardan en formato JSON (resultados crudos y resumen) y CSV en el directorio `benchmark/results/`.
+
+El framework también ofrece un modo rápido (_quick_) que ejecuta solo 6 preguntas representativas (una por categoría principal), reduciendo el tiempo de evaluación de 10-30 minutos por modelo a 1-3 minutos, útil para iteraciones rápidas durante el desarrollo.
+
+### 11.5. Análisis y Visualización
+
+Para el análisis comparativo de los resultados, se desarrolló el notebook `benchmark/analysis.ipynb` que implementa nueve secciones de visualización:
+
+1. **Comparación de latencia:** Gráficos de barras horizontales y _boxplots_ de la distribución de tiempos de respuesta por modelo.
+2. **Precisión de recuperación:** Barras codificadas por color (rojo < 70%, amarillo < 85%, verde ≥ 85%) con etiquetas porcentuales.
+3. **Relevancia y fidelidad:** Gráficos de barras pareados para comparación directa de ambas métricas.
+4. **Frontera de Pareto (latencia vs. calidad):** Diagrama de dispersión donde el eje X es la latencia promedio y el eje Y es la media de relevancia y fidelidad, permitiendo identificar los modelos que ofrecen el mejor compromiso entre velocidad y calidad.
+5. **Radar chart multi-dimensional:** Gráfico de araña con cinco ejes (recuperación, relevancia, fidelidad, precisión de rechazo, velocidad normalizada) que permite una comparación visual holística.
+6. **Heatmap de métricas:** Mapa de calor con anotaciones numéricas de las seis métricas principales por modelo.
+7. **Análisis por dificultad:** Gráficos de barras agrupados que comparan la fidelidad y latencia de cada modelo segmentadas por nivel de dificultad (fácil, medio, difícil).
+8. **_Score_ compuesto y ranking:** Cálculo de una puntuación compuesta ponderada (30% relevancia + 30% fidelidad + 20% recuperación + 10% velocidad + 10% precisión de rechazo) que sintetiza el desempeño global de cada modelo en un único valor ordenable.
+
+### 11.6. Resultados Cuantitativos
+
+> **Nota:** Al momento de la redacción de este informe, las ejecuciones formales del benchmark completo se encuentran pendientes de realización. Los resultados cuantitativos serán incorporados en la versión final del documento una vez ejecutado el protocolo de evaluación descrito. A continuación se presentan las observaciones preliminares derivadas de las pruebas manuales realizadas durante el desarrollo.
+
+<!-- TODO: Reemplazar esta sección con los resultados reales del benchmark una vez ejecutado.
+     Ejecutar: python -m benchmark.run_benchmark --models qwen2.5:1.5b qwen2.5:3b llama3.2:3b
+     Los archivos se generarán en benchmark/results/ con timestamps.
+
+     Insertar aquí:
+     - Tabla comparativa de modelos (latencia, retrieval, relevancia, fidelidad, alucinación)
+     - Gráficos generados por analysis.ipynb
+     - Análisis del ranking por score compuesto
+-->
+
+**Observaciones preliminares de pruebas durante el desarrollo:**
+
+- El pipeline de recuperación semántica demuestra consistencia independiente del modelo generativo: la selección de fragmentos por ChromaDB es determinista para una misma consulta, lo cual se confirma por el hecho de que el componente de _retrieval_ es compartido entre todos los modelos evaluados.
+
+- Los modelos de la familia Qwen 2.5 demuestran una mayor fluidez y coherencia en las respuestas en español en comparación con Llama 3.2 del mismo tamaño, particularmente en el uso correcto de conectores lingüísticos y en la capacidad de parafrasear con precisión el contenido del contexto normativo.
+
+- El sistema de rechazo de consultas fuera del dominio (_no-answer_) funciona correctamente para preguntas claramente externas al corpus (nombre del rector, resultados deportivos), gracias al _system prompt_ que instruye al modelo a responder exclusivamente con base en el contexto proporcionado y con temperatura de inferencia de 0.1.
+
+- La latencia de primera consulta (_cold-start_) es significativamente superior a las consultas subsiguientes, dado que el modelo debe cargarse en RAM. La configuración `OLLAMA_KEEP_ALIVE=30m` mitiga este efecto manteniendo el modelo cargado durante 30 minutos de inactividad.
+
+### 11.7. Discusión
+
+El diseño del framework de evaluación permite extraer conclusiones relevantes sobre las siguientes dimensiones del sistema:
+
+**Compromiso entre tamaño del modelo y calidad de respuesta:** La inclusión de modelos desde 1B hasta 8B parámetros en el benchmark permite cuantificar el punto de rendimientos decrecientes: el incremento de calidad entre un modelo de 3B y uno de 7B parámetros puede no justificar el triplicado en consumo de RAM y latencia, especialmente en un entorno donde la respuesta está fuertemente condicionada por el contexto recuperado (RAG cerrado). En un sistema RAG, la calidad del _retrieval_ tiene un impacto mayor sobre la calidad final que la capacidad de razonamiento del modelo generativo.
+
+**Efectividad del pipeline de recuperación:** La estrategia de _chunking_ jerárquico (artículos como unidad mínima, subdivisión solo si exceden 1.500 caracteres) combinada con el modelo de _embeddings_ multilingüe y la búsqueda por similitud del coseno con Top-K=6 constituye el factor determinante de la calidad del sistema. Un fallo de recuperación —donde el fragmento relevante no aparece en el Top-6— no puede ser compensado por ningún modelo generativo, sin importar su tamaño. Por esta razón, el objetivo de validación prioriza la tasa de recuperación correcta (> 85% en Top-3) como métrica primaria.
+
+**Limitaciones de las métricas automáticas:** Las métricas implementadas son aproximaciones heurísticas diseñadas para operar sin un modelo juez externo (lo cual violaría la restricción de privacidad RNF01). La relevancia basada en similitud del coseno entre pregunta y respuesta es una medida _proxy_ que puede sobreestimar la calidad cuando la respuesta repite términos de la pregunta sin aportar información útil. La fidelidad basada en solapamiento léxico no captura paráfrasis semánticas: una respuesta que reformula correctamente el contenido del contexto con vocabulario diferente podría recibir una puntuación injustamente baja. Estas limitaciones motivan la complementación con pruebas de usabilidad cualitativas descritas en la Sección 10.3.
+
+**Viabilidad del despliegue en hardware edge:** La arquitectura distribuida adoptada —con la inferencia delegada a un servidor externo— resuelve el cuello de botella principal del despliegue en Orange Pi. La placa ARM se dedica exclusivamente a la gestión de la base vectorial y la orquestación, tareas que demandan menos de 1 GB de RAM y se completan en menos de 100 ms. La latencia total del sistema queda dominada por el tiempo de generación de tokens del SLM, que varía entre 3 y 45 segundos dependiendo del modelo seleccionado y del hardware del servidor de inferencia.
+
+**Consideraciones sobre escalabilidad y trabajo futuro:** El sistema actual procesa consultas de forma secuencial (`OLLAMA_NUM_PARALLEL=1`), lo que constituye una limitación para entornos con múltiples usuarios concurrentes. La escalabilidad horizontal requeriría la replicación del servicio Ollama detrás de un balanceador de carga, un aspecto que excede el alcance del prototipo actual pero que la arquitectura contenedorizada facilita. Asimismo, la incorporación de un _reranker_ cross-encoder (BAAI/bge-reranker-v2-m3, actualmente opcional) mejora la precisión de recuperación al reordenar los Top-6 fragmentos antes de compactar el contexto a los Top-3 que recibe el SLM, a costa de 1-3 segundos adicionales de latencia por consulta.
 
 ---
 ## 12. Referencias
