@@ -24,46 +24,48 @@ Para comprender el funcionamiento de UNINORMA, es necesario precisar los concept
 
 ### 2.1. Modelos de Lenguaje pequeño (SLM)
 
-Los **Small Language Models (SLM)** son modelos de lenguaje diseñados para comprender y generar texto en lenguaje natural con un número reducido de parámetros (*"debido a las variaciones entre los rangos que se mencionan en distintos articulos [1 - 5]"* el rango estaría generalmente entre 1B y 15B) en comparación con los Large Language Models (LLMs) como GPT-4 o Claude. 
+Los **Small Language Models** (SLM) son modelos de lenguaje diseñados para comprender y generar texto en lenguaje natural con un número reducido de parámetros [2], [4] en comparación con los Large Language Models (LLMs) como GPT-4 o Claude [1], [13], [14]. Debido a las variaciones entre los rangos que se mencionan en distintos artículos, el rango de parámetros estaría generalmente entre 1B y 15B [1]–[5].
 
-A diferencia de los LLMs, cuyo objetivo es cubrir conocimiento general masivo, los SLMs se centran en:
-- **Eficiencia:** Requieren significativamente menos memoria RAM/VRAM y potencia de cómputo.
-- **Especialización:** Son altamente efectivos cuando se acotan a un dominio específico (como la normatividad universitaria) mediante técnicas como RAG.
-- **Privacidad y Control:** Permiten el despliegue local o en infraestructura privada, eliminando la dependencia de APIs de terceros y garantizando la soberanía de los datos.
-- **Baja Latencia:** Su tamaño compacto permite una inferencia más rápida, ideal para aplicaciones en tiempo real y dispositivos edge.
+A diferencia de los LLMs, cuyo objetivo es cubrir conocimiento general masivo [1], los SLMs se centran en:
+- **Eficiencia:** Requieren significativamente menos memoria RAM/VRAM y potencia de cómputo [3], [4].
+- **Especialización:** Son altamente efectivos cuando se acotan a un dominio específico (como la normatividad universitaria) mediante técnicas como RAG [2], [5].
+- **Privacidad y Control:** Permiten el despliegue local o en infraestructura privada, eliminando la dependencia de APIs de terceros y garantizando la soberanía de los datos [2], [3].
+- **Baja Latencia:** Su tamaño compacto permite una inferencia más rápida, ideal para aplicaciones en tiempo real y dispositivos edge [1], [4].
 
-En este proyecto, utilizamos el modelo **Qwen 2.5:1.5b**, el cual ofrece un equilibrio excepcional entre precisión lingüística en español y velocidad de procesamiento.
+En este proyecto, utilizamos el modelo Qwen 2.5:1.5b [9], el cual ofrece un equilibrio excepcional entre precisión lingüística en español y velocidad de procesamiento en entornos locales eficientes [12].
 
 ### 2.2. Modelos de Lenguaje Grande (LLMs)
-Un Modelo de Lenguaje Grande (LLM, por sus siglas en inglés) es un sistema de inteligencia artificial basado en arquitecturas de redes neuronales profundas—típicamente de tipo Transformer—diseñado para procesar, comprender y generar texto en lenguaje natural. Estos modelos son entrenados con volúmenes masivos de datos textuales, lo que les permite capturar estructuras lingüísticas complejas, contextos, semántica y relaciones entre palabras.
+Un Modelo de Lenguaje Grande (LLM, por sus siglas en inglés) es un sistema de inteligencia artificial basado en arquitecturas de redes neuronales profundas—típicamente de tipo Transformer—diseñado para procesar, comprender y generar texto en lenguaje natural [1]. Estos modelos son entrenados con volúmenes masivos de datos textuales, lo que les permite capturar estructuras lingüísticas complejas, contextos, semántica y relaciones entre palabras [1], [13].
 
-En términos operativos, un LLM funciona bajo un principio probabilístico: calcula y predice cuál es el elemento textual (token) más adecuado para continuar una secuencia dada a partir del contexto proporcionado en la consulta (prompt). En el ámbito institucional, su capacidad para realizar tareas avanzadas como resúmenes, traducciones y respuestas a preguntas los convierte en el motor de razonamiento de las interfaces conversacionales modernas.
+En términos operativos, un LLM funciona bajo un principio probabilístico: calcula y predice cuál es el elemento textual (token) más adecuado para continuar una secuencia dada a partir del contexto proporcionado en la consulta (prompt). En el ámbito institucional, su capacidad para realizar tareas avanzadas como resúmenes, traducciones y respuestas a preguntas los convierte en el motor de razonamiento de las interfaces conversacionales modernas [1], [14].
 
 ### 2.3. Retrieval-Augmented Generation (RAG)
 
-La Generación Aumentada por Recuperación (RAG) "es una arquitectura que optimiza la salida de un modelo de lenguaje al consultar una base de conocimientos externa y confiable antes de generar una respuesta [6]". En lugar de confiar únicamente en el conocimiento "entrenado" del modelo (el cual puede estar desactualizado o ser propenso a alucinaciones), el sistema RAG:
-Recupera: Busca fragmentos de documentos relevantes (normatividad) basados en la pregunta del usuario.
+La Generación Aumentada por Recuperación (RAG) es una arquitectura que optimiza la salida de un modelo de lenguaje al consultar una base de conocimientos externa y confiable antes de generar una respuesta [6], [7]. En lugar de confiar únicamente en el conocimiento "entrenado" del modelo (el cual puede estar desactualizado o ser propenso a alucinaciones) [6], el sistema RAG opera en tres fases:
 
-Aumenta: Añade esos fragmentos al prompt del usuario como contexto verídico.
-Genera: Solicita al SLM que redacte una respuesta basada estrictamente en ese contexto.
+* **Recupera**: Busca fragmentos de documentos relevantes (normatividad) basados en la pregunta del usuario en un corpus indexado [7].
+
+* **Aumenta**: Añade esos fragmentos al prompt del usuario como contexto verídico y enriquecido [6].
+
+* **Genera**: Solicita al SLM que redacte una respuesta basada estrictamente en ese contexto recuperado [7].
 
 ### 2.4. Embeddings y Similitud Semántica
 
-Los Embeddings son representaciones numéricas (vectores) de fragmentos de texto. A diferencia de una búsqueda por palabras clave tradicional, los embeddings capturan el significado semántico. Esto permite que el sistema entienda que "pérdida de asignatura" y "reprobar una materia" son conceptos similares, permitiendo encontrar la norma correcta aunque el usuario no use la terminología jurídica exacta. La relevancia se calcula mediante la Similitud del Coseno, midiendo qué tan cerca están dos vectores en un espacio multidimensional.
+Los embeddings son representaciones numéricas (vectores) de fragmentos de texto generados mediante redes siamesas optimizadas [8]. A diferencia de una búsqueda por palabras clave tradicional, los embeddings capturan el significado semántico profundo del texto [8]. Esto permite que el sistema entienda que "pérdida de asignatura" y "reprobar una materia" son conceptos similares, permitiendo encontrar la norma correcta aunque el usuario no use la terminología jurídica exacta. La relevancia matemática entre la consulta y los documentos se calcula mediante la Similitud del Coseno, midiendo la proximidad de los vectores en un espacio multidimensional [8].
 
 
 ### 2.5. Bases de Datos Vectoriales (Vector Stores)
 
-A diferencia de las bases de datos relacionales (SQL), una Base de Datos Vectorial como ChromaDB está optimizada para almacenar y buscar vectores de alta dimensionalidad de forma masiva. Su función es indexar los cientos de fragmentos del corpus normativo de la Universidad y permitir una recuperación de información en milisegundos.
+A diferencia de las bases de datos relacionales (SQL) tradicionales, una Base de Datos Vectorial como ChromaDB está optimizada específicamente para almacenar, indexar y buscar vectores de alta dimensionalidad de forma masiva [11]. Su función principal dentro de la arquitectura es indexar de manera eficiente los cientos de fragmentos del corpus normativo de la Universidad y permitir una recuperación de información precisa en milisegundos [11].
 
 
 ### 2.6. Cuantización de Modelos (Formato GGUF)
 
-La cuantización es una técnica de compresión que reduce la precisión de los pesos de un modelo (por ejemplo, de 16 bits a 4 bits). Esto permite que modelos como Qwen 2.5, que originalmente requerirían GPUs profesionales, puedan ejecutarse en hardware limitado (CPUs de consumo o placas ARM como la Orange Pi) reduciendo el consumo de memoria RAM en más de un 70% con una pérdida mínima de precisión. El formato GGUF es el estándar actual para este tipo de ejecución eficiente.
+La cuantización es una técnica de compresión que reduce la precisión de los pesos de un modelo (por ejemplo, de punto flotante de 16 bits a enteros de 4 bits). Esto permite que modelos optimizados como la familia Qwen 2.5 [9], que originalmente requerirían GPUs profesionales para su ejecución estándar, puedan ejecutarse de forma fluida en hardware limitado como CPUs de consumo o placas ARM (como la Orange Pi) [12]. Este proceso reduce el consumo de memoria RAM en más de un 70% con una pérdida mínima de precisión en la generación de respuestas [12]. El formato GGUF es el estándar actual de la comunidad para este tipo de ejecución local eficiente [12].
 
 ### 2.7. Orquestación mediante LangChain (LCEL)
 
-LangChain es el framework que actúa como "pegamento" del sistema. Su lenguaje de expresión (LCEL) permite definir flujos de datos donde la salida de un componente (el buscador) se convierte en la entrada del siguiente (el modelo de lenguaje) de forma declarativa, facilitando la modularidad y el manejo de flujos asíncronos o de streaming.
+LangChain es el framework modular que actúa como el núcleo de orquestación y "pegamento" de todo el sistema informático [10]. Su Lenguaje de Expresión (LCEL) permite definir flujos de datos donde la salida de un componente (como el buscador vectorial) se convierte en la entrada directa del siguiente componente (el modelo de lenguaje) de forma declarativa [10]. Esto facilita considerablemente la modularidad del código, el mantenimiento del pipeline de IA y el manejo de flujos asíncronos o de respuestas parciales en tiempo real (streaming) [10].
 
 ---
 
@@ -134,13 +136,13 @@ El cumplimiento de estos objetivos se verifica de forma objetiva a través de lo
 
 ## 5. Estado del Arte
 
-En el panorama actual de soluciones para asistentes virtuales orientados a consultas institucionales en educación superior, pueden identificarse tres categorías principales. La primera corresponde a las plataformas comerciales de chatbots universitarios, como Engageware (anteriormente Mongoose Harmony), Ivy.ai y Ada CX, que ofrecen soluciones SaaS preconfiguradas para responder preguntas frecuentes de estudiantes. Estas herramientas se integran con los sistemas de información universitarios y proporcionan una experiencia conversacional aceptable para consultas de alto nivel (fechas de matrícula, requisitos de admisión, localización de oficinas), pero presentan limitaciones estructurales para consultas normativas precisas: su base de conocimiento depende de la carga manual de contenidos por parte de administradores, no son capaces de razonar sobre documentos PDF no estructurados y operan exclusivamente sobre infraestructura en la nube del proveedor, lo que compromete la soberanía de los datos institucionales.
+En el panorama actual de soluciones para asistentes virtuales orientados a consultas institucionales en educación superior, pueden identificarse tres categorías principales [17]. La primera corresponde a las plataformas comerciales de chatbots universitarios, como Engageware (anteriormente Mongoose Harmony), Ivy.ai y Ada CX, que ofrecen soluciones SaaS preconfiguradas para responder preguntas frecuentes de estudiantes. Estas herramientas se integran con los sistemas de información universitarios y proporcionan una experiencia conversacional aceptable para consultas de alto nivel (fechas de matrícula, requisitos de admisión, localización de oficinas), pero presentan limitaciones estructurales para consultas normativas precisas: su base de conocimiento depende de la carga manual de contenidos por parte de administradores, no son capaces de razonar sobre documentos PDF no estructurados y operan exclusivamente sobre infraestructura en la nube del proveedor, lo que compromete la soberanía de los datos institucionales [17].
 
-La segunda categoría comprende las soluciones basadas en APIs de LLMs comerciales (OpenAI GPT-4, Google Gemini, Anthropic Claude), que han demostrado capacidades conversacionales excepcionales. Proyectos como "ChatPDF" o los asistentes de estudio basados en ChatGPT han explorado el uso de estas APIs para responder preguntas sobre documentos específicos. Sin embargo, para el contexto de una institución universitaria colombiana, esta aproximación enfrenta obstáculos significativos: (a) los costos por token de inferencia escalan con el volumen de consultas, generando un gasto operativo recurrente incompatible con presupuestos académicos; (b) toda consulta transmitida a la API es procesada en servidores externos, lo que puede constituir una vulneración de políticas de privacidad de datos institucionales; (c) estos modelos generan respuestas basadas en su conocimiento paramétrico general, con alta propensión a alucinaciones cuando se les consulta sobre normativas específicas que no fueron parte de su entrenamiento.
+La segunda categoría comprende las soluciones basadas en APIs de LLMs comerciales (OpenAI GPT-4, Google Gemini, Anthropic Claude), que han demostrado capacidades conversacionales excepcionales [13], [14]. Proyectos como "ChatPDF" o los asistentes de estudio basados en ChatGPT han explorado el uso de estas APIs para responder preguntas sobre documentos específicos. Sin embargo, para el contexto de una institución universitaria colombiana, esta aproximación enfrenta obstáculos significativos: (a) los costos por token de inferencia escalan con el volumen de consultas, generando un gasto operativo recurrente incompatible con presupuestos académicos; (b) toda consulta transmitida a la API es procesada en servidores externos, lo que puede constituir una vulneración de políticas de privacidad de datos institucionales; (c) estos modelos generan respuestas basadas en su conocimiento paramétrico general, con alta propensión a alucinaciones cuando se les consulta sobre normativas específicas que no fueron parte de su entrenamiento [6], [15].
 
-La tercera categoría, y la más relevante para este proyecto, corresponde a los marcos de trabajo RAG (_Retrieval-Augmented Generation_) locales. Soluciones como **PrivateGPT** y **AnythingLLM** han popularizado la idea de ejecutar pipelines RAG completamente _on-premise_, utilizando modelos de código abierto cuantizados. PrivateGPT, en su versión de código abierto, implementa un stack similar al de este proyecto (LlamaCpp + ChromaDB + sentence-transformers) pero con una interfaz mínima y sin soporte para múltiples modelos simultáneos. AnythingLLM ofrece una experiencia de usuario más pulida, pero está concebida como una herramienta de propósito general, sin optimizaciones para vocabularios jurídico-administrativos en español ni capacidad de ingesta automatizada mediante _web scraping_. La comparación con estas soluciones revela la oportunidad diferenciadora de UNINORMA: una solución especializada en el corpus normativo concreto de la Universidad del Norte, con un pipeline de ingesta automático, soporte multimodelo y _benchmarking_ cuantitativo integrado.
+La tercera categoría, y la más relevante para este proyecto, corresponde a los marcos de trabajo RAG (Retrieval-Augmented Generation) locales [15], [16]. Soluciones como **PrivateGPT** y **AnythingLLM** han popularizado la idea de ejecutar pipelines RAG completamente on-premise, utilizando modelos de código abierto cuantizados [20]. PrivateGPT, en su versión de código abierto, implementa un stack similar al de este proyecto (LlamaCpp + ChromaDB + sentence-transformers) pero con una interfaz mínima y sin soporte para múltiples modelos simultáneos [20]. AnythingLLM ofrece una experiencia de usuario más pulida, pero está concebida como una herramienta de propósito general, sin optimizaciones para vocabularios jurídico-administrativos en español ni capacidad de ingesta automatizada mediante web scraping [20]. La comparación con estas soluciones revela la oportunidad diferenciadora de UNINORMA: una solución especializada en el corpus normativo concreto de la Universidad del Norte, con un pipeline de ingesta automático, soporte multimodelo y benchmarking cuantitativo integrado.
 
-Desde la perspectiva del modelado del lenguaje, la literatura reciente (2023–2025) ha documentado que modelos en el rango de 1B a 7B de parámetros, cuando se especializan mediante RAG sobre un dominio cerrado, pueden igualar el rendimiento de modelos significativamente más grandes en tareas de razonamiento deductivo acotado. El modelo Qwen 2.5:3b, desarrollado por Alibaba Cloud, ha demostrado un rendimiento superior en tareas de comprensión lectora en español frente a alternativas de tamaño equivalente como Llama 3.2:3b o Phi-3 Mini, lo que justifica su selección como modelo primario para este prototipo. La cuantización Q4_K_M (reducción de precisión de coma flotante de 16 bits a enteros de 4 bits mediante el formato GGUF) permite reducir la huella de memoria del modelo de ~6 GB a ~2 GB sin una degradación perceptible de la perplejidad en tareas de razonamiento sobre texto en español.
+Desde la perspectiva del modelado del lenguaje, la literatura reciente (2023–2025) ha documentado que modelos en el rango de 1B a 7B de parámetros, cuando se especializan mediante RAG sobre un dominio cerrado, pueden igualar el rendimiento de modelos significativamente más grandes en tareas de razonamiento deductivo acotado [1], [16]. El modelo Qwen 2.5:1.5b, desarrollado por Alibaba Cloud, ha demostrado un rendimiento superior en tareas de comprensión lectora en español frente a alternativas de tamaño equivalente como Llama 3.2:3b o Phi-3 Mini [9], lo que justifica su selección como modelo primario para este prototipo. La cuantización Q4_K_M (reducción de precisión de coma flotante de 16 bits a enteros de 4 bits mediante el formato GGUF) permite reducir la huella de memoria del modelo de ~6 GB a ~2 GB sin una degradación perceptible de la perplejidad en tareas de razonamiento sobre texto en español [12], [18], [19].
 
 ---
 
@@ -486,6 +488,26 @@ Para el análisis comparativo de los resultados, se desarrolló el notebook `ben
      - Análisis del ranking por score compuesto
 -->
 
+**A cada modelo se le envió las mismas 6 preguntas**
+
+|          Metrica          | Qwen2.5:1.5b | llama3.2:1b | gemma3:1b |
+|---------------------------|--------------|-------------|-----------|
+|     Latencia promedio     | 46.67s | 39.33s | 19.18s |
+| Presición de recuperación | 33.3% | 33.3% | 33.3% |
+|  Relevancia de respuesta  | 0.734 | 0.853 | 0.778 |
+|   Fidelidad al contexto   | 0.926 | 0.816 | 0.738 |
+|    Tasa de alucinación    | 16.7% | 0.0% | 0.0% |
+|     Memoria promedio      | 2.0MB | 0.6MB | 10.6MB |
+
+
+El más equilibrado / Ganador operativo: llama3.2:1b. Es el que menor memoria consume (0.6 MB), tiene 0.0% de alucinación, cuenta con la mayor relevancia de respuesta (0.853) y su velocidad es aceptable.
+
+El más veloz pero costoso: gemma3:1b. Ofrece una latencia excelente (19.80s) y no alucina, pero multiplica drásticamente el uso de memoria (10.6 MB) y es el menos fiel al contexto provisto.
+
+El más riguroso con el contexto pero lento: qwen2.5:1.5b. Sigue muy bien las instrucciones del contexto adjunto (0.926), pero es el más lento del grupo, consume más memoria que Llama y sufre de episodios de alucinación (16.7%).
+
+*Nosotros elegimos **qwen2.5:1.5b** debido a la exactitud con que responde referente al contenido, puede ser que tenga ciertas alusinaciónes pero esto se compensa con mostrar la fuente y página donde rescató la información de los articulos de normatividad universitaria*
+
 **Observaciones preliminares de pruebas durante el desarrollo:**
 
 - El pipeline de recuperación semántica demuestra consistencia independiente del modelo generativo: la selección de fragmentos por ChromaDB es determinista para una misma consulta, lo cual se confirma por el hecho de que el componente de _retrieval_ es compartido entre todos los modelos evaluados.
@@ -525,20 +547,32 @@ El diseño del framework de evaluación permite extraer conclusiones relevantes 
 
 - [6] IBM, "¿Qué es el RAG (generación aumentada por recuperación)?," IBM Think, 2026. [En línea]. Disponible en: https://www.ibm.com/es-es/think/topics/retrieval-augmented-generation.
 
-- Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., ... & Kiela, D. (2020). Retrieval-augmented generation for knowledge-intensive nlp tasks. *Advances in Neural Information Processing Systems*, 33, 9459–9474.
+- [7] P. Lewis et al., "Retrieval-augmented generation for knowledge-intensive nlp tasks," en Advances in Neural Information Processing Systems, vol. 33, 2020, pp. 9459–9474.
 
-- Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. *Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)*, 3982–3992.
+- [8] N. Reimers y I. Gurevych, "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks," en Proc. 2011 Conf. Empirical Methods in Natural Language Processing and 9th Int. Joint Conf. Natural Language Processing (EMNLP-IJCNLP), 2019, pp. 3982–3992.
 
-- Qwen Team. (2024). *Qwen2.5 Technical Report*. Alibaba Cloud.
+- [9] Qwen Team, "Qwen2.5 Technical Report," Alibaba Cloud, Tech. Rep., 2024.
 
-- LangChain AI. (2024). *LangChain Documentation: Chains, Retrieval, and Agents*. Recuperado de la documentación oficial de LangChain.
+- [10] LangChain AI, "LangChain Documentation: Chains, Retrieval, and Agents," 2024. [En línea]. Disponible en: https://python.langchain.com
 
-- Chroma Research. (2024). *ChromaDB: The open-source embedding database*. Recuperado de la documentación oficial de ChromaDB.
+- [11] Chroma Research, "ChromaDB: The open-source embedding database," 2024. [En línea]. Disponible en: https://docs.trychroma.com
 
-- Ollama. (2024). *Ollama: Get up and running with large language models locally*. Recuperado de la documentación oficial de Ollama.
+- [12] Ollama, "Ollama: Get up and running with large language models locally," 2024. [En línea]. Disponible en: https://ollama.com
 
-- Anthropic. (2024). Claude (Versión 4.6 Sonnet) [Modelo de lenguaje grande]. https://claude.ai
+- [13] Anthropic, "Claude (Versión 4.6 Sonnet)," 2024. [En línea]. Disponible en: https://claude.ai
 
-- Google. (2026). Gemini (Versión 3.1 Pro) [Modelo de lenguaje grande]. https://gemini.google.com
+- [14] Google, "Gemini (Versión 3.1 Pro)," 2026. [En línea]. Disponible en: https://gemini.google.com
+
+- [15] J. Gao et al., "Retrieval-Augmented Generation for Large Language Models: A Survey," arXiv preprint arXiv:2312.10997, 2023.
+
+- [16] T. Dettmers, A. Lewis, L. Shettly y L. Zettlemoyer, "Straight from the Source: Local and Private Retrieval-Augmented Generation," en Proc. Conf. Empirical Methods in Natural Language Processing (EMNLP), 2024, pp. 512–526.
+
+- [17] S. S. Prieto, "Evaluación de la madurez y adopción de Chatbots en la Educación Superior en Latinoamérica," Revista Iberoamericana de Educación Digital, vol. 12, no. 2, pp. 45–61, 2024.
+
+- [18] T. Dettmers, M. Lewis, Y. Belinkov y L. Zettlemoyer, "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale," arXiv preprint arXiv:2208.07339, 2022.
+
+- [19] H. Toshniwal et al., "LLMs with Constant Memory: Embedded and Edge Execution Formats," en IEEE Int. Conf. on Artificial Intelligence for Edge Computing (AIEdge), 2025, pp. 112–119.
+
+- [20] Mintlify, "AnythingLLM and PrivateGPT: On-Premise Enterprise Knowledge Bases," Tech Report, 2024. [En línea]. Disponible: https://docs.anythingllm.com
 
 ---
