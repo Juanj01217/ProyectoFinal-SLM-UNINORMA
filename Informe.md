@@ -476,8 +476,6 @@ Para el análisis comparativo de los resultados, se desarrolló el notebook `ben
 
 ### 11.6. Resultados Cuantitativos
 
-> **Nota:** Al momento de la redacción de este informe, las ejecuciones formales del benchmark completo se encuentran pendientes de realización. Los resultados cuantitativos serán incorporados en la versión final del documento una vez ejecutado el protocolo de evaluación descrito. A continuación se presentan las observaciones preliminares derivadas de las pruebas manuales realizadas durante el desarrollo.
-
 **A cada modelo se le envió las mismas 6 preguntas**
 
 |          Metrica          | Qwen2.5:1.5b | llama3.2:1b | gemma3:1b |
