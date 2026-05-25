@@ -39,6 +39,33 @@ def load_test_questions(path: Path) -> List[dict]:
     return data["questions"]
 
 
+def _build_history_for_question(
+    question: dict,
+    questions_by_id: Dict[str, dict],
+    answers_by_id: Dict[str, str],
+) -> List[Dict[str, str]]:
+    """Construye el historial de conversacion para preguntas con depends_on."""
+    history = []
+    depends_on = question.get("depends_on")
+    if not depends_on:
+        return history
+
+    chain = []
+    current_id = depends_on
+    while current_id and current_id in questions_by_id:
+        chain.append(current_id)
+        current_id = questions_by_id[current_id].get("depends_on")
+    chain.reverse()
+
+    for qid in chain:
+        q = questions_by_id[qid]
+        history.append({"role": "user", "content": q["question"]})
+        if qid in answers_by_id:
+            history.append({"role": "assistant", "content": answers_by_id[qid]})
+
+    return history
+
+
 def run_single_model_benchmark(
     model_name: str,
     questions: List[dict],
@@ -53,18 +80,24 @@ def run_single_model_benchmark(
     chain = create_rag_chain(retriever, model_name)
     results = []
 
+    questions_by_id = {q["id"]: q for q in questions}
+    answers_by_id: Dict[str, str] = {}
+
     for i, q in enumerate(questions):
         qid = q["id"]
         question = q["question"]
         expected_source = q["expected_source"]
 
-        print(f"  [{i+1}/{len(questions)}] {qid}: {question[:60]}...")
+        has_context = bool(q.get("depends_on"))
+        ctx_label = f" [contexto: {q['depends_on']}]" if has_context else ""
+        print(f"  [{i+1}/{len(questions)}] {qid}: {question[:60]}...{ctx_label}")
 
         mem_before = get_memory_usage_mb()
+        history = _build_history_for_question(q, questions_by_id, answers_by_id)
 
         try:
             rag_result, latency = measure_latency(
-                query_rag, chain, question, model_name
+                query_rag, chain, question, model_name, history if history else None
             )
         except Exception as e:
             print(f"    ERROR: {e}")
@@ -84,15 +117,14 @@ def run_single_model_benchmark(
         mem_after = get_memory_usage_mb()
 
         answer = rag_result["answer"]
+        answers_by_id[qid] = answer
         source_docs = rag_result.get("source_documents", [])
         retrieved_sources = [
             doc.metadata.get("source", "") for doc in source_docs
         ]
 
-        # Concatenar contexto para metricas
         context = "\n".join(doc.page_content for doc in source_docs)
 
-        # Calcular metricas
         retrieval_hit = check_retrieval_hit(retrieved_sources, expected_source)
         relevancy = compute_answer_relevancy(
             question, answer, raw_embedding_model

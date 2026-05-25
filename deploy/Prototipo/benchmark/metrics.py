@@ -111,35 +111,71 @@ def compute_faithfulness(answer: str, context: str) -> float:
 
 def detect_hallucination(answer: str, context: str) -> bool:
     """
-    Deteccion simple de alucinaciones: verifica si la respuesta
-    introduce numeros, fechas o entidades no presentes en el contexto.
+    Detecta alucinaciones verificando multiples senales:
+    1. Numeros/fechas inventados no presentes en el contexto
+    2. Baja cobertura de palabras clave de la respuesta en el contexto
+    3. Afirmaciones especificas sin soporte en el contexto
     """
     if not answer.strip() or not context.strip():
         return False
 
-    # Extraer numeros de la respuesta y el contexto
-    answer_numbers = set(re.findall(r'\b\d+\b', answer))
-    context_numbers = set(re.findall(r'\b\d+\b', context))
+    answer_lower = answer.lower()
 
-    # Numeros en la respuesta que no estan en el contexto
-    new_numbers = answer_numbers - context_numbers
-    # Filtrar numeros muy comunes (1, 2, etc.)
-    significant_new = {n for n in new_numbers if int(n) > 10}
-
-    if len(significant_new) > 2:
-        return True
-
-    # Verificar si la respuesta indica "no encontre informacion"
+    # Respuestas de negacion no son alucinaciones
     no_info_patterns = [
         "no encontre",
         "no tengo informacion",
         "no se encuentra",
         "no dispongo",
         "no hay informacion",
+        "no puedo responder",
+        "no esta disponible",
+        "no aparece en",
+        "no menciona",
     ]
-    answer_lower = answer.lower()
     if any(p in answer_lower for p in no_info_patterns):
-        return False  # Respuesta correcta de negacion
+        return False
+
+    # --- Senal 1: Numeros/fechas inventados ---
+    answer_numbers = set(re.findall(r'\b\d+\b', answer))
+    context_numbers = set(re.findall(r'\b\d+\b', context))
+    new_numbers = answer_numbers - context_numbers
+    significant_new = {n for n in new_numbers if int(n) > 10}
+    if len(significant_new) > 2:
+        return True
+
+    # --- Senal 2: Baja cobertura de contenido en el contexto ---
+    context_lower = context.lower()
+    answer_sentences = [s.strip() for s in re.split(r'[.!?\n]+', answer) if len(s.strip()) > 15]
+    if answer_sentences:
+        unsupported = 0
+        for sentence in answer_sentences:
+            words = [w for w in sentence.lower().split() if len(w) > 4]
+            if not words:
+                continue
+            matches = sum(1 for w in words if w in context_lower)
+            coverage = matches / len(words)
+            if coverage < 0.3:
+                unsupported += 1
+        unsupported_ratio = unsupported / len(answer_sentences) if answer_sentences else 0
+        if unsupported_ratio > 0.5:
+            return True
+
+    # --- Senal 3: Nombres propios inventados ---
+    answer_proper = set(re.findall(r'\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}\b', answer))
+    context_proper = set(re.findall(r'\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}\b', context))
+    common_words = {
+        "Universidad", "Norte", "Articulo", "Reglamento", "Resolucion",
+        "Consejo", "Rector", "Decreto", "Colombia", "Barranquilla",
+        "Profesores", "Estudiantes", "Egresados", "Trabajo", "Politica",
+        "Uninorte", "Fundacion", "Capitulo", "Paragrafo", "Titulo",
+        "Acuerdo", "Numeral", "Inciso", "Literal", "Respuesta",
+        "Pregunta", "Informacion", "Documento", "Norma", "Contexto",
+        "Segun", "Conforme", "Acuerdo", "Siguiente", "Manera",
+    }
+    new_proper = answer_proper - context_proper - common_words
+    if len(new_proper) > 3:
+        return True
 
     return False
 

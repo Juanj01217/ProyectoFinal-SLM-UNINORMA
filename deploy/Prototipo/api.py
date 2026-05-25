@@ -297,21 +297,60 @@ def _save_benchmark_to_disk(results: list, summary: dict) -> None:
 def _sample_questions_quick(questions: list) -> list:
     seen: set = set()
     sampled = []
+    sampled_ids: set = set()
+    questions_by_id = {q["id"]: q for q in questions}
+
     for q in questions:
         cat = q.get("category", "")
+        if cat == "context_followup":
+            continue
         if cat not in seen:
             seen.add(cat)
             sampled.append(q)
+            sampled_ids.add(q["id"])
         if len(sampled) >= 6:
             break
+
+    context_groups: dict = {}
+    for q in questions:
+        group = q.get("context_group")
+        if group:
+            context_groups.setdefault(group, []).append(q)
+    for group_name, group_qs in list(context_groups.items())[:1]:
+        sorted_qs = sorted(group_qs, key=lambda x: x.get("context_order", 0))
+        for q in sorted_qs:
+            if q["id"] not in sampled_ids:
+                sampled.append(q)
+                sampled_ids.add(q["id"])
+
     return sampled
 
 
-def _eval_one_question(chain, q: dict, model_name: str, raw_sentence_model, metrics) -> dict:
+def _build_benchmark_history(question: dict, questions_by_id: dict, answers_by_id: dict) -> list | None:
+    """Construye historial de conversacion para preguntas con depends_on."""
+    depends_on = question.get("depends_on")
+    if not depends_on:
+        return None
+    chain = []
+    current_id = depends_on
+    while current_id and current_id in questions_by_id:
+        chain.append(current_id)
+        current_id = questions_by_id[current_id].get("depends_on")
+    chain.reverse()
+    history = []
+    for qid in chain:
+        q = questions_by_id[qid]
+        history.append({"role": "user", "content": q["question"]})
+        if qid in answers_by_id:
+            history.append({"role": "assistant", "content": answers_by_id[qid]})
+    return history if history else None
+
+
+def _eval_one_question(chain, q: dict, model_name: str, raw_sentence_model, metrics, history=None) -> dict:
     mem_before = metrics["get_memory_usage_mb"]()
     try:
         rag_result, latency = metrics["measure_latency"](
-            metrics["query_rag"], chain, q["question"], model_name
+            metrics["query_rag"], chain, q["question"], model_name, history
         )
         mem_after = metrics["get_memory_usage_mb"]()
         answer = rag_result["answer"]
@@ -392,11 +431,15 @@ def _run_benchmark_thread(job_id: str, models: list, quick: bool) -> None:
         }
 
         all_results: list = []
+        questions_by_id = {q["id"]: q for q in questions}
         for model_name in models:
             job["current_model"] = model_name
             chain = create_rag_chain(retriever, model_name)
+            answers_by_id: dict = {}
             for q in questions:
-                result = _eval_one_question(chain, q, model_name, raw_sentence_model, metrics)
+                history = _build_benchmark_history(q, questions_by_id, answers_by_id)
+                result = _eval_one_question(chain, q, model_name, raw_sentence_model, metrics, history)
+                answers_by_id[q["id"]] = result.get("answer", "")
                 all_results.append(result)
                 job["completed_questions"] += 1
                 job["results"] = all_results

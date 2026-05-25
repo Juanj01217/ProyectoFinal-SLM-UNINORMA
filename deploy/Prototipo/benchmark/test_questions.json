@@ -176,6 +176,96 @@
       "expected_source": "Reg_profesor_%20junio_2021.pdf",
       "category": "reglamento_profesor",
       "difficulty": "medium"
+    },
+
+    {
+      "id": "q026",
+      "question": "Cuales son las categorias de profesores que establece el reglamento de Uninorte?",
+      "expected_source": "Reg_profesor_%20junio_2021.pdf",
+      "category": "context_followup",
+      "difficulty": "easy",
+      "context_group": "profesores",
+      "context_order": 1
+    },
+    {
+      "id": "q027",
+      "question": "De esas categorias mencionadas, cuales requieren titulo de doctorado?",
+      "expected_source": "Reg_profesor_%20junio_2021.pdf",
+      "category": "context_followup",
+      "difficulty": "medium",
+      "context_group": "profesores",
+      "context_order": 2,
+      "depends_on": "q026"
+    },
+    {
+      "id": "q028",
+      "question": "Y que beneficios adicionales tienen los profesores de esa categoria mas alta?",
+      "expected_source": "Reg_profesor_%20junio_2021.pdf",
+      "category": "context_followup",
+      "difficulty": "hard",
+      "context_group": "profesores",
+      "context_order": 3,
+      "depends_on": "q027"
+    },
+
+    {
+      "id": "q029",
+      "question": "Que dice el reglamento interno de trabajo sobre las vacaciones del personal?",
+      "expected_source": "reglamento_Interno_Trabajo_Uninorte.pdf",
+      "category": "context_followup",
+      "difficulty": "easy",
+      "context_group": "trabajo",
+      "context_order": 1
+    },
+    {
+      "id": "q030",
+      "question": "Ademas de las vacaciones, que otros permisos remunerados se mencionan en ese mismo reglamento?",
+      "expected_source": "reglamento_Interno_Trabajo_Uninorte.pdf",
+      "category": "context_followup",
+      "difficulty": "medium",
+      "context_group": "trabajo",
+      "context_order": 2,
+      "depends_on": "q029"
+    },
+    {
+      "id": "q031",
+      "question": "Y cuales de esos permisos requieren aprobacion del jefe inmediato?",
+      "expected_source": "reglamento_Interno_Trabajo_Uninorte.pdf",
+      "category": "context_followup",
+      "difficulty": "hard",
+      "context_group": "trabajo",
+      "context_order": 3,
+      "depends_on": "q030"
+    },
+
+    {
+      "id": "q032",
+      "question": "Que tipos de obras estan protegidas por el reglamento de propiedad intelectual?",
+      "expected_source": "reglamento_propiedad_intelectual.pdf",
+      "category": "context_followup",
+      "difficulty": "easy",
+      "context_group": "propiedad",
+      "context_order": 1
+    },
+    {
+      "id": "q033",
+      "question": "De esas obras, cuales le pertenecen a la universidad y cuales al autor?",
+      "expected_source": "reglamento_propiedad_intelectual.pdf",
+      "category": "context_followup",
+      "difficulty": "medium",
+      "context_group": "propiedad",
+      "context_order": 2,
+      "depends_on": "q032"
+    },
+    {
+      "id": "q034",
+      "question": "En caso de conflicto sobre la titularidad de esas obras, que procedimiento se debe seguir?",
+      "expected_source": "reglamento_propiedad_intelectual.pdf",
+      "category": "context_followup",
+      "difficulty": "hard",
+      "context_group": "propiedad",
+      "context_order": 3,
+      "depends_on": "q033"
     }
   ]
 }
