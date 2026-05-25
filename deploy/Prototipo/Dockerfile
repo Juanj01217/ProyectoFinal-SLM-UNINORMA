@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 COPY Prototipo/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
     python -c "from sentence_transformers import SentenceTransformer; \
-               SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+               SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')"
 
 # Copiar el código fuente y datos (incluye data/chroma_db y data/raw)
 COPY Prototipo/ .

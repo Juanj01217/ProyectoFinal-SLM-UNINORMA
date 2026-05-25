@@ -292,7 +292,7 @@ def create_llm(
         temperature=temperature,
         num_predict=max_tokens,
         system=SYSTEM_PROMPT_ES,
-        repeat_penalty=1.15,
+        repeat_penalty=1.2,
         keep_alive=OLLAMA_KEEP_ALIVE,
     )
 

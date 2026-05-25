@@ -58,9 +58,26 @@ echo "[2/3] Verificación de modelo completada."
 # --- 3. Verificar ChromaDB ---
 echo ""
 echo "[3/3] Verificando base de datos vectorial (ChromaDB)..."
+NEEDS_REINDEX=false
 if [ ! -d "/app/data/chroma_db" ] || [ -z "$(ls -A /app/data/chroma_db 2>/dev/null)" ]; then
-    echo "  ChromaDB no encontrada. Ejecutando ingestión de datos..."
+    NEEDS_REINDEX=true
+    echo "  ChromaDB no encontrada."
+elif [ -f "/app/data/chroma_db/.embedding_model" ]; then
+    CURRENT_MODEL=$(cat /app/data/chroma_db/.embedding_model)
+    EXPECTED_MODEL=$(python3 -c "from config import DEFAULT_EMBEDDING_MODEL; print(DEFAULT_EMBEDDING_MODEL)")
+    if [ "$CURRENT_MODEL" != "$EXPECTED_MODEL" ]; then
+        NEEDS_REINDEX=true
+        echo "  Embedding model cambió ($CURRENT_MODEL -> $EXPECTED_MODEL)."
+    fi
+else
+    NEEDS_REINDEX=true
+    echo "  No se encontró registro del embedding model usado."
+fi
+
+if [ "$NEEDS_REINDEX" = true ]; then
+    echo "  Ejecutando ingestión de datos..."
     python3 ingest.py --pdf-dir /reglamentos
+    python3 -c "from config import DEFAULT_EMBEDDING_MODEL; open('/app/data/chroma_db/.embedding_model','w').write(DEFAULT_EMBEDDING_MODEL)"
     echo "  Ingestión completada."
 else
     echo "[3/3] ChromaDB encontrada y lista."

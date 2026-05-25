@@ -27,7 +27,7 @@ EMBEDDING_MODELS = {
     "minilm-multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
     "mpnet-multilingual": "paraphrase-multilingual-mpnet-base-v2",
 }
-DEFAULT_EMBEDDING_MODEL = "minilm-multilingual"
+DEFAULT_EMBEDDING_MODEL = "mpnet-multilingual"
 
 # === Reranker (cross-encoder) ===
 # Modelo cross-encoder multilingue que reordena los chunks recuperados.
@@ -35,7 +35,7 @@ DEFAULT_EMBEDDING_MODEL = "minilm-multilingual"
 # compactando el contexto que ve el SLM y bajando latencia de generacion.
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 RERANKER_ENABLED = True
-RERANKER_TOP_N = 3  # cuantos chunks pasan al prompt final despues del rerank
+RERANKER_TOP_N = 5  # cuantos chunks pasan al prompt final despues del rerank
 
 # === Configuracion de Ollama ===
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -61,12 +61,12 @@ REWRITE_SLM_MODEL = "qwen2.5:1.5b"
 OLLAMA_KEEP_ALIVE = "30m"
 
 # === Parametros de Recuperacion ===
-RETRIEVAL_TOP_K = 6
-RETRIEVAL_SCORE_THRESHOLD = 0.4
+RETRIEVAL_TOP_K = 12
+RETRIEVAL_SCORE_THRESHOLD = 0.25
 
 # === Parametros de Generacion ===
-TEMPERATURE = 0.1
-# Reducido de 600 -> 300. El system prompt limita a 5 oraciones, ~200 tokens
-# en espanol. 300 deja margen y recorta la latencia de generacion hasta 50%
+TEMPERATURE = 0.05
+# Reducido de 600 -> 250. El system prompt limita a 5 oraciones, ~200 tokens
+# en espanol. 250 deja margen y recorta la latencia de generacion hasta 50%
 # cuando el modelo es verboso.
-MAX_TOKENS = 300
+MAX_TOKENS = 250
