@@ -24,7 +24,11 @@ SYSTEM_PROMPT_ES = (
     "No inventes requisitos, numeros, porcentajes, nombres, fechas ni procedimientos. "
     "Si un fragmento no menciona algo especifico, NO lo incluyas en tu respuesta. "
     "Prefiere responder con menos informacion pero correcta, a responder con mas informacion inventada.\n"
-    "7. Si solo encuentras informacion parcial, responde solo con lo que los fragmentos contienen y aclara que no encontraste mas detalles.\n"
+    "7. USA SOLO FRAGMENTOS RELEVANTES: Si un fragmento no tiene relacion directa con la pregunta, IGNORALO completamente. "
+    "No incluyas informacion de fragmentos que hablan de otro tema solo por estar disponibles.\n"
+    "8. La frase 'No encontre informacion sobre este tema en los documentos disponibles' SOLO se usa cuando NINGUN fragmento "
+    "contiene informacion relevante para la pregunta. Si ya respondiste la pregunta con informacion de los fragmentos, "
+    "NO agregues esa frase al final. NUNCA la uses como cierre o disclaimer.\n"
     "No uses encabezados por documento ni repitas el mismo punto aunque aparezca en varios fragmentos. "
     "Responde siempre en espanol."
 )
@@ -36,7 +40,7 @@ RAG_PROMPT_TEMPLATE = """PREGUNTA: {question}
 </fragmentos_normativos>
 {attendance_note}
 {rights_note}
-INSTRUCCION: Responde la PREGUNTA usando SOLO la informacion de los <fragmentos_normativos>. IGNORA por completo cualquier conocimiento previo; si la respuesta no esta explicitamente en los fragmentos, responde 'No encontre informacion sobre este tema en los documentos disponibles' y no inventes, supongas ni extrapoles absolutamente nada. NO agregues requisitos, numeros, porcentajes ni datos que no aparezcan textualmente en los fragmentos. Si solo hay informacion parcial, responde con lo que hay y aclara que no encontraste mas detalles. Maximo 5 oraciones. Nunca uses vinetas que citen los nombres de los documentos, haz una redaccion cohesiva.
+INSTRUCCION: Responde la PREGUNTA usando SOLO la informacion de los <fragmentos_normativos>. IGNORA por completo cualquier conocimiento previo. IGNORA fragmentos que no tengan relacion directa con la pregunta. NO inventes, supongas ni extrapoles absolutamente nada. NO agregues requisitos, numeros, porcentajes ni datos que no aparezcan textualmente en los fragmentos. Si NINGUN fragmento contiene informacion relevante, responde UNICAMENTE 'No encontre informacion sobre este tema en los documentos disponibles'. Si SÍ encontraste informacion relevante, responde con ella y NO agregues 'No encontre informacion' al final. Maximo 5 oraciones. Nunca uses vinetas que citen los nombres de los documentos, haz una redaccion cohesiva.
 
 CITACION OBLIGATORIA: cada oracion con informacion normativa debe terminar con una cita entre corchetes. Usa [Art. N] si el fragmento tiene numero de articulo; de lo contrario usa [Fuente: nombre_archivo]. Una oracion sin cita sera descartada.
 
