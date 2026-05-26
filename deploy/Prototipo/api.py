@@ -229,6 +229,11 @@ def query_stream(body: QueryRequest):
             # frontend puede reemplazar el texto acumulado con esta version si
             # detecta que es mas corta (= el SLM leakeo headers al final).
             cleaned = _truncate_at_leak(accumulated)
+            # Si el filtro vacio el texto (era leak-only) servimos el mensaje
+            # institucional de _NO_INFO en vez de cadena vacia.
+            if not cleaned.strip():
+                from src.rag_chain import _NO_INFO
+                cleaned = _NO_INFO
             llm_said_no_info = "no encontre informacion" in cleaned.lower()[:120]
             final_sources = [] if llm_said_no_info else sources_info
             done_payload = {
@@ -236,7 +241,7 @@ def query_stream(body: QueryRequest):
                 "sources": final_sources,
                 "model": body.model,
             }
-            if len(cleaned) < len(accumulated):
+            if cleaned != accumulated:
                 done_payload["clean_answer"] = cleaned
             yield f"data: {json.dumps(done_payload)}\n\n"
         except Exception as exc:

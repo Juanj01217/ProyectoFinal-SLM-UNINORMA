@@ -47,15 +47,50 @@ _LEAK_PATTERNS = (
     re.compile(r"\n\s*Tu\s+respuesta", re.IGNORECASE),
     # Cierre con "No encontre" despues de haber respondido = artefacto
     re.compile(r"\n\s*No\s+encontre\s+informacion", re.IGNORECASE),
+    # Leak de las pistas inyectadas: si el SLM regurgita la nota interna
+    re.compile(r"\n\s*Pista\s+de\s+formato\s*:", re.IGNORECASE),
+    re.compile(r"\n\s*MODO\s+(?:ESPECIFICO|LISTA)\s*:", re.IGNORECASE),
 )
+
+
+# Patrones de leak AL INICIO de la respuesta (posicion 0, sin newline previo).
+# Capturan el caso "1) [Art. 2] [Fuente: ...]" donde el SLM enumera chunk
+# headers en vez de sintetizar la respuesta.
+_LEAK_PATTERNS_AT_START = (
+    re.compile(r"^\s*\d+\)\s*\[Art\.\s*\d+[a-z]?\][^\n]*\[Fuente:[^\]]+\]", re.IGNORECASE),
+    re.compile(r"^\s*\[Art\.\s*\d+[a-z]?\]\s*\[Fuente:[^\]]+\]", re.IGNORECASE),
+    re.compile(r"^\s*\[Fuente:[^\]]+\][^\n]*", re.IGNORECASE),
+    # Leak del nombre de la pista
+    re.compile(r"^\s*Pista\s+de\s+formato\s*:[^\n]*", re.IGNORECASE),
+    re.compile(r"^\s*MODO\s+(?:ESPECIFICO|LISTA)\s*:[^\n]*", re.IGNORECASE),
+)
+
+
+_BRACKET_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _is_mostly_brackets(text: str, ratio: float = 0.40) -> bool:
+    """True si mas del `ratio` del texto son brackets de cita/header."""
+    if not text or len(text) < 30:
+        return False
+    bracket_chars = sum(len(m.group(0)) for m in _BRACKET_RE.finditer(text))
+    return (bracket_chars / len(text)) > ratio
 
 
 def _truncate_at_leak(text: str) -> str:
     """Corta la respuesta cuando el SLM empieza a echar headers o instrucciones.
 
-    Util porque qwen2.5:1.5b suele continuar generando despues de su respuesta
-    legitima, copiando el header del fragmento (`[Art. N] [Fuente: ...]`) o
-    repitiendo la enumeracion. Truncamos en el primer leak detectado.
+    Util porque qwen2.5:1.5b suele:
+      - Continuar generando despues de su respuesta legitima, copiando el
+        header del fragmento (`[Art. N] [Fuente: ...]`) o repitiendo la
+        enumeracion -> patrones _LEAK_PATTERNS (requieren \\n previo).
+      - Empezar la respuesta directamente listando headers de chunks
+        (`1) [Art. 2] [Fuente: ...]`) -> patrones _LEAK_PATTERNS_AT_START
+        (matchean en posicion 0).
+
+    Si despues de strippear los leaks el texto restante es mayormente
+    brackets (sin contenido sintetizado), devolvemos "" para que el caller
+    sirva _NO_INFO en lugar de basura.
     """
     if not text:
         return text
@@ -63,15 +98,36 @@ def _truncate_at_leak(text: str) -> str:
     low = text.lower().lstrip()
     if low.startswith("no encontre informacion"):
         return text
-    earliest = len(text)
-    # Buscar el primer leak DESPUES de los primeros 60 chars (para no cortar
-    # respuestas legitimas que empiezan citando un articulo).
-    search_start = min(60, len(text))
-    for pat in _LEAK_PATTERNS:
-        m = pat.search(text, pos=search_start)
-        if m and m.start() < earliest:
-            earliest = m.start()
-    return text[:earliest].rstrip()
+
+    # PASO 1: Strippear leaks que aparecen AL INICIO de la respuesta.
+    # Iterativamente porque suelen venir encadenados ("1) [...] 2) [...]").
+    stripped = text.lstrip()
+    while stripped:
+        matched = False
+        for pat in _LEAK_PATTERNS_AT_START:
+            m = pat.match(stripped)
+            if m:
+                stripped = stripped[m.end():].lstrip()
+                matched = True
+                break
+        if not matched:
+            break
+    text = stripped
+
+    # PASO 2: Truncar en el primer leak interno (despues del char 60).
+    if text:
+        earliest = len(text)
+        search_start = min(60, len(text))
+        for pat in _LEAK_PATTERNS:
+            m = pat.search(text, pos=search_start)
+            if m and m.start() < earliest:
+                earliest = m.start()
+        text = text[:earliest].rstrip()
+
+    # PASO 3: Si lo que queda es mayormente brackets, descartar.
+    if _is_mostly_brackets(text):
+        return ""
+    return text
 
 
 _NO_INFO = (
@@ -623,6 +679,10 @@ class RAGChain:
         raw_answer = self.llm.invoke(prompt_text)
         answer = raw_answer.content if hasattr(raw_answer, "content") else str(raw_answer)
         answer = _truncate_at_leak(answer)
+        # Si el filtro vacio la respuesta (era leak puro), devolver _NO_INFO
+        # en vez de string vacio. Mejor "no se" honesto que basura.
+        if not answer.strip():
+            return {"answer": _NO_INFO, "source_documents": []}
         answer = _dedup_answer(answer)
         answer = _validate_no_invented_acronyms(answer, source_docs)
         answer = _enforce_citations(answer, source_docs)
@@ -763,22 +823,21 @@ class RAGChain:
                 )
 
         # Pista de modo (lista vs especifico). El SLM responde mejor cuando
-        # sabe que extension de respuesta dar.
+        # sabe que extension de respuesta dar. NOTA: se quito el ejemplo
+        # detallado de "MODO ESPECIFICO" porque qwen2.5:1.5b lo copiaba
+        # textualmente a la respuesta (leak de instrucciones). La regla 2 del
+        # RAG_PROMPT_TEMPLATE ya cubre el comportamiento esperado; estas notas
+        # son solo un refuerzo corto.
         if is_specific_query:
             rights_note += (
-                "MODO ESPECIFICO: el usuario pide UN dato puntual, no la lista.\n"
-                "- Responde en UNA sola oracion (maximo dos).\n"
-                "- Si el fragmento dice 'Son derechos/deberes: ... N) X cosa que hace Y...', "
-                "extrae solo el predicado de N (lo que hace) y reescribelo en una oracion natural.\n"
-                "- PROHIBIDO empezar con 'Son derechos' o 'Son deberes' o numerar items.\n"
-                "- Ejemplo: pregunta 'para que sirve el carnet?' con fragmento "
-                "'1) Obtener el carnet que los acredite como egresados ... facilitara el acceso al campus...' "
-                "-> 'El carnet acredita al portador como egresado y facilita el acceso al campus y a los servicios de la Oficina de Egresado [Art. 2].'\n\n"
+                "Pista de formato: respuesta breve (1-2 oraciones), enfocada "
+                "solo en lo que responde la pregunta puntual; no enumeres la lista.\n\n"
             )
         elif is_list_query:
             rights_note += (
-                "MODO LISTA: copia textualmente TODOS los items (a-z o 1-N) del "
-                "fragmento relevante, en orden, sin saltar ninguno y sin parafrasear.\n\n"
+                "Pista de formato: la pregunta pide una lista. Copia textualmente "
+                "todos los items (a-z o 1-N) del fragmento relevante, en orden, "
+                "sin saltar ninguno y sin parafrasear.\n\n"
             )
 
         prompt_text = self.prompt.format(
