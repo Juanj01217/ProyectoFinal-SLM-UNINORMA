@@ -29,11 +29,35 @@ from config import (
 
 
 # Regex que detecta el inicio de un articulo. Cubre las variantes mas comunes
-# en reglamentos colombianos: "Articulo 12.", "ARTICULO 12.", "Art. 12.",
-# opcionalmente con tilde. Captura el numero para metadata.
+# en reglamentos colombianos:
+#   - Digitos: "Articulo 12.", "ARTICULO 12.", "Art. 12."
+#   - Ordinales en espanol: "ARTICULO PRIMERO", "Articulo Segundo", "Art. Decimo"
+# Captura el identificador (numerico u ordinal) para normalizarlo a numero.
+_ORDINAL_MAP = {
+    "PRIMERO": "1", "SEGUNDO": "2", "TERCERO": "3", "CUARTO": "4",
+    "QUINTO": "5", "SEXTO": "6", "SEPTIMO": "7", "SÉPTIMO": "7",
+    "OCTAVO": "8", "NOVENO": "9", "DECIMO": "10", "DÉCIMO": "10",
+    "UNDECIMO": "11", "UNDÉCIMO": "11", "ONCEAVO": "11",
+    "DUODECIMO": "12", "DUODÉCIMO": "12", "DOCEAVO": "12",
+    "DECIMOTERCERO": "13", "DECIMOTERCER": "13",
+    "DECIMOCUARTO": "14", "DECIMOQUINTO": "15", "DECIMOSEXTO": "16",
+    "DECIMOSEPTIMO": "17", "DECIMOSÉPTIMO": "17",
+    "DECIMOCTAVO": "18", "DECIMONOVENO": "19", "VIGESIMO": "20", "VIGÉSIMO": "20",
+}
+
+_ORDINAL_PATTERN = "|".join(sorted(_ORDINAL_MAP.keys(), key=len, reverse=True))
+
 _ARTICLE_RE = re.compile(
-    r"(?im)^\s*(?:art[íi]culo|art\.)\s*(\d+)[\.\-\s]",
+    r"(?im)^\s*(?:art[íi]culo|art\.)\s*"
+    r"(?P<num>\d+|" + _ORDINAL_PATTERN + r")"
+    r"[\.\-\s°º:,]",
 )
+
+
+def _normalize_article_number(raw: str) -> str:
+    """Convierte 'SEGUNDO' -> '2', 'Decimo' -> '10', '12' -> '12'."""
+    upper = raw.upper().strip()
+    return _ORDINAL_MAP.get(upper, upper)
 
 
 def create_splitter(
@@ -61,7 +85,7 @@ def _find_article_boundaries(text: str) -> List[Tuple[int, int, str]]:
     for i, m in enumerate(matches):
         start = m.start()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        boundaries.append((start, end, m.group(1)))
+        boundaries.append((start, end, _normalize_article_number(m.group("num"))))
     return boundaries
 
 

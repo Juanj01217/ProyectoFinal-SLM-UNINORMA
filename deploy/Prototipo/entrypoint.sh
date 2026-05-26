@@ -61,7 +61,7 @@ echo "[2/3] Verificación de modelo completada."
 # config.py, el siguiente arranque detecta mismatch y re-indexa automatico.
 echo ""
 echo "[3/3] Verificando base de datos vectorial (ChromaDB)..."
-EXPECTED_SIG=$(python3 -c "from config import DEFAULT_EMBEDDING_MODEL, ARTICLE_MAX_CHARS, CHUNK_SIZE, CHUNK_OVERLAP; print(f'{DEFAULT_EMBEDDING_MODEL}|amax={ARTICLE_MAX_CHARS}|csize={CHUNK_SIZE}|cover={CHUNK_OVERLAP}')")
+EXPECTED_SIG=$(python3 -c "from config import DEFAULT_EMBEDDING_MODEL, ARTICLE_MAX_CHARS, CHUNK_SIZE, CHUNK_OVERLAP, CHUNKER_VERSION; print(f'{DEFAULT_EMBEDDING_MODEL}|amax={ARTICLE_MAX_CHARS}|csize={CHUNK_SIZE}|cover={CHUNK_OVERLAP}|chunker={CHUNKER_VERSION}')")
 SIG_FILE="/app/data/chroma_db/.ingest_signature"
 NEEDS_REINDEX=false
 

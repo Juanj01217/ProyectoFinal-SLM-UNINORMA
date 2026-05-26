@@ -206,11 +206,19 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[\.\\!\?])\s+(?=[A-Z\u00c1\u00c9\u00cd\u00
 
 
 def _enforce_citations(answer: str, docs: List[Document]) -> str:
-    """Exige cita [Art. N] o [Fuente: xxx] al final de cada afirmacion.
+    """Garantiza cita al final si la respuesta es una sola oracion; NO descarta
+    oraciones sin cita en respuestas largas.
 
-    Oraciones sin cita se eliminan. Si el modelo no cito nada, devuelve la
-    respuesta original (en vez de vacio) para no perder la respuesta del SLM:
-    el defecto queda reflejado en la metrica de faithfulness del benchmark.
+    Historico: el comportamiento anterior eliminaba toda oracion sin
+    [Art. N]/[Fuente: ...], lo cual mutilaba respuestas de SLMs pequenos
+    (qwen2.5:1.5b) que olvidan citar parte de sus oraciones, especialmente
+    cuando los chunks no traen metadata.article (caso del Reglamento de
+    Egresados antes del fix de ordinales). Ahora:
+      - Si la respuesta empieza con 'No encontre...': devolver tal cual.
+      - Si es una sola oracion sin cita: anexar la cita del primer doc.
+      - Si tiene varias oraciones: devolver la respuesta integra. La calidad
+        de citas se evalua en el benchmark (faithfulness), no se impone
+        destructivamente en runtime.
     """
     if not docs or not answer.strip():
         return answer
@@ -230,10 +238,8 @@ def _enforce_citations(answer: str, docs: List[Document]) -> str:
             return f"{answer.rstrip('.').rstrip()} [Fuente: {first['source']}]."
         return answer
 
-    kept = [s for s in sentences if _CITATION_RE.search(s)]
-    if not kept:
-        return answer
-    return " ".join(kept)
+    # Multi-oracion: conservar respuesta integra (no destructivo).
+    return answer
 
 
 # Query Rewriting - validacion del output del rewriter
@@ -290,6 +296,9 @@ def create_llm(
         model=model_name,
         base_url=OLLAMA_BASE_URL,
         temperature=temperature,
+        top_p=0.3,
+        top_k=20,
+        seed=42,
         num_predict=max_tokens,
         system=SYSTEM_PROMPT_ES,
         repeat_penalty=1.2,

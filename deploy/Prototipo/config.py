@@ -22,6 +22,11 @@ SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 ARTICLE_MAX_CHARS = 2500
 ARTICLE_MIN_CHARS = 80
 
+# Version del chunker. Incrementar cuando cambie la logica de detectar
+# articulos o partir texto, para que el entrypoint detecte mismatch y
+# re-indexe automaticamente la base vectorial.
+CHUNKER_VERSION = "v2-ordinales"
+
 # === Modelos de Embedding ===
 EMBEDDING_MODELS = {
     "minilm-multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
@@ -34,8 +39,13 @@ DEFAULT_EMBEDDING_MODEL = "mpnet-multilingual"
 # Multiplica el retrieval_accuracy y permite reducir top_k post-rerank,
 # compactando el contexto que ve el SLM y bajando latencia de generacion.
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-RERANKER_ENABLED = False
-RERANKER_TOP_N = 5  # cuantos chunks pasan al prompt final despues del rerank
+# Reactivado con fastembed (ONNX int8), que corre 3-5x mas rapido en CPU ARM
+# que la version PyTorch de sentence-transformers. Si fastembed no carga, el
+# pipeline cae al slicing por similitud coseno automaticamente.
+RERANKER_ENABLED = True
+# Bajado de 5 -> 3: el SLM responde mejor con 3 chunks bien rankeados que con
+# 5 donde 2 pueden estar contaminados con tema adyacente.
+RERANKER_TOP_N = 3
 
 # === Configuracion de Ollama ===
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -69,8 +79,10 @@ RETRIEVAL_TOP_K = 8
 RETRIEVAL_SCORE_THRESHOLD = 0.35
 
 # === Parametros de Generacion ===
-TEMPERATURE = 0.05
-# Reducido de 600 -> 250. El system prompt limita a 5 oraciones, ~200 tokens
-# en espanol. 250 deja margen y recorta la latencia de generacion hasta 50%
-# cuando el modelo es verboso.
-MAX_TOKENS = 500
+# temperature=0.0 + top_p/top_k acotados en create_llm() garantizan que la misma
+# pregunta produzca la misma respuesta. Imprescindible para un asistente
+# normativo donde la consistencia importa mas que la creatividad.
+TEMPERATURE = 0.0
+# Subido de 500 -> 700 para que las enumeraciones de derechos/deberes (que
+# pueden llegar a 10 items) no se trunquen a mitad de palabra.
+MAX_TOKENS = 700

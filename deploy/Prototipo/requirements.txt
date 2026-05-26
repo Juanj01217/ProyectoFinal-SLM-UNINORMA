@@ -5,6 +5,11 @@ langchain-core>=0.2.0
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
 
+# Reranker ONNX int8 cuantizado (3-5x mas rapido en CPU ARM que el
+# CrossEncoder de PyTorch). Si falla la instalacion en la arquitectura
+# objetivo, el pipeline cae al slicing por similitud coseno.
+fastembed>=0.4.0
+
 # PDF Extraction
 PyMuPDF>=1.23.0
 
