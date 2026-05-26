@@ -143,7 +143,7 @@ export async function* sendQueryStream(
   question: string,
   model: string,
   history: Array<{ role: string; content: string }> = []
-): AsyncGenerator<{ token?: string; done?: boolean; sources?: Source[]; model?: string; error?: string }> {
+): AsyncGenerator<{ token?: string; done?: boolean; sources?: Source[]; model?: string; error?: string; clean_answer?: string }> {
   const res = await fetch(`${API_URL}/query/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

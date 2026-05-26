@@ -178,11 +178,22 @@ export default function HomePage() {
         }
         if (chunk.done) {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === loadingMsg.id
-                ? { ...m, sources: chunk.sources ?? [], loading: false }
-                : m
-            )
+            prev.map((m) => {
+              if (m.id !== loadingMsg.id) return m;
+              // Si el backend mando una version limpia (corto el leak del SLM
+              // al final), reemplazamos el texto acumulado para no mostrar
+              // basura repetida. Si no, dejamos el texto que ya se streameo.
+              const finalContent =
+                chunk.clean_answer && chunk.clean_answer.length < (m.content ?? "").length
+                  ? chunk.clean_answer
+                  : m.content;
+              return {
+                ...m,
+                content: finalContent,
+                sources: chunk.sources ?? [],
+                loading: false,
+              };
+            })
           );
           fetchStatus().then(setStatus).catch(() => {});
         }

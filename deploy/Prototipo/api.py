@@ -217,32 +217,28 @@ def query_stream(body: QueryRequest):
     def generate():
         try:
             accumulated = ""
-            sent_len = 0
             for chunk in token_stream:
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
                 if not token:
                     continue
                 accumulated += token
-
-                # Detectar leak en el texto acumulado. Si el truncate cambia la
-                # longitud, dejamos de enviar tokens (el cliente ya tiene texto
-                # legitimo; lo que viene a continuacion es ruido).
-                clean = _truncate_at_leak(accumulated)
-                if len(clean) < len(accumulated):
-                    pending = clean[sent_len:]
-                    if pending:
-                        yield f"data: {json.dumps({'token': pending})}\n\n"
-                        sent_len = len(clean)
-                    break
-
                 yield f"data: {json.dumps({'token': token})}\n\n"
-                sent_len = len(accumulated)
 
-            # Sustituimos por la version limpia final para verificacion del "no info".
-            accumulated = _truncate_at_leak(accumulated)
-            llm_said_no_info = "no encontre informacion" in accumulated.lower()[:120]
+            # Limpieza final unica vez terminado el stream. Calculamos la version
+            # depurada y la enviamos en el evento `done` como `clean_answer`. El
+            # frontend puede reemplazar el texto acumulado con esta version si
+            # detecta que es mas corta (= el SLM leakeo headers al final).
+            cleaned = _truncate_at_leak(accumulated)
+            llm_said_no_info = "no encontre informacion" in cleaned.lower()[:120]
             final_sources = [] if llm_said_no_info else sources_info
-            yield f"data: {json.dumps({'done': True, 'sources': final_sources, 'model': body.model})}\n\n"
+            done_payload = {
+                "done": True,
+                "sources": final_sources,
+                "model": body.model,
+            }
+            if len(cleaned) < len(accumulated):
+                done_payload["clean_answer"] = cleaned
+            yield f"data: {json.dumps(done_payload)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
