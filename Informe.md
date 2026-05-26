@@ -443,8 +443,6 @@ El benchmark está configurado para evaluar hasta **ocho modelos SLM** cuantizad
 | **Mistral:7b** | 7B | ~7.5 GB | Referencia de calidad para modelos de mayor tamaño |
 | **Llama 3.1:8b** | 8B | ~8 GB | Límite superior de tamaño viable en el hardware de referencia |
 
-Todos los modelos se ejecutan bajo cuantización Q4_K_M (formato GGUF) a través de Ollama, con temperatura de inferencia fijada en 0.1 y un límite de 300 tokens por respuesta.
-
 ### 11.4. Protocolo de Ejecución
 
 El benchmark se ejecuta de forma automatizada mediante el script `run_benchmark.py`, que implementa el siguiente protocolo:
@@ -474,35 +472,103 @@ Para el análisis comparativo de los resultados, se desarrolló el notebook `ben
 
 ### 11.6. Resultados Cuantitativos
 
-**A cada modelo se le envió las mismas 6 preguntas**
+### 11.6.1. Resumen Promedio por Modelo
 
-|          Metrica          | Qwen2.5:1.5b | llama3.2:1b | gemma3:1b |
-|---------------------------|--------------|-------------|-----------|
-|     Latencia promedio     | 46.67s | 39.33s | 19.18s |
-| Presición de recuperación | 33.3% | 33.3% | 33.3% |
-|  Relevancia de respuesta  | 0.734 | 0.853 | 0.778 |
-|   Fidelidad al contexto   | 0.926 | 0.816 | 0.738 |
-|    Tasa de alucinación    | 16.7% | 0.0% | 0.0% |
-|     Memoria promedio      | 2.0MB | 0.6MB | 10.6MB |
+Esta tabla muestra los promedios generales obtenidos por cada modelo a lo largo de las 9 pruebas realizadas (6 de nivel fácil, 1 de nivel medio y 2 de seguimiento de contexto). 
 
+*Nota: La tasa de éxito de recuperación (Retrieval) fue del 22.2% para todos los modelos (2 de 9 aciertos).*
 
-El más equilibrado / Ganador operativo: llama3.2:1b. Es el que menor memoria consume (0.6 MB), tiene 0.0% de alucinación, cuenta con la mayor relevancia de respuesta (0.853) y su velocidad es aceptable.
+| Modelo | Tiempo Promedio (s) | Relevancia Promedio | Fidelidad Promedio | Alucinaciones Detectadas |
+| :--- | :---: | :---: | :---: | :---: |
+| **qwen2.5:1.5b** | 43.86s | 0.76 | 0.61 | 2 |
+| **mistral:7b** | 37.08s | 0.74 | 0.69 | 2 |
+| **llama3.2:3b** | 35.11s | 0.73 | 0.63 | 2 |
+| **llama3.1:8b** | 40.12s | 0.66 | 0.46 | 2 |
+| **phi3:mini** | 38.29s | 0.66 | 0.35 | 2 |
+| **gemma3:1b** | 36.19s | 0.64 | 0.57 | 1 |
+| **llama3.2:1b** | 36.76s | 0.59 | 0.33 | 0 |
+| **qwen2.5:3b** | 36.01s | 0.39 | 0.16 | 1 |
 
-El más veloz pero costoso: gemma3:1b. Ofrece una latencia excelente (19.80s) y no alucina, pero multiplica drásticamente el uso de memoria (10.6 MB) y es el menos fiel al contexto provisto.
+---
 
-El más riguroso con el contexto pero lento: qwen2.5:1.5b. Sigue muy bien las instrucciones del contexto adjunto (0.926), pero es el más lento del grupo, consume más memoria que Llama y sufre de episodios de alucinación (16.7%).
+### 11.6.2. Tabla Detallada de Benchmarks
 
-*Nosotros elegimos **qwen2.5:1.5b** debido a la exactitud con que responde referente al contenido, puede ser que tenga ciertas alusinaciónes pero esto se compensa con mostrar la fuente y página donde rescató la información de los articulos de normatividad universitaria*
+Esta tabla contiene el desglose de cada prueba ejecutada por modelo, incluyendo la categoría de la pregunta, si se logró la recuperación de información (Retrieval), el tiempo de respuesta, las puntuaciones de relevancia y fidelidad, y si se identificó alguna alucinación.
 
-**Observaciones preliminares de pruebas durante el desarrollo:**
-
-- El pipeline de recuperación semántica demuestra consistencia independiente del modelo generativo: la selección de fragmentos por ChromaDB es determinista para una misma consulta, lo cual se confirma por el hecho de que el componente de _retrieval_ es compartido entre todos los modelos evaluados.
-
-- Los modelos de la familia Qwen 2.5 demuestran una mayor fluidez y coherencia en las respuestas en español en comparación con Llama 3.2 del mismo tamaño, particularmente en el uso correcto de conectores lingüísticos y en la capacidad de parafrasear con precisión el contenido del contexto normativo.
-
-- El sistema de rechazo de consultas fuera del dominio (_no-answer_) funciona correctamente para preguntas claramente externas al corpus (nombre del rector, resultados deportivos), gracias al _system prompt_ que instruye al modelo a responder exclusivamente con base en el contexto proporcionado y con temperatura de inferencia de 0.1.
-
-- La latencia de primera consulta (_cold-start_) es significativamente superior a las consultas subsiguientes, dado que el modelo debe cargarse en RAM. La configuración `OLLAMA_KEEP_ALIVE=30m` mitiga este efecto manteniendo el modelo cargado durante 30 minutos de inactividad.
+| Modelo | Categoría / Tarea | Dificultad | Retrieval | Tiempo (s) | Relevancia | Fidelidad | Alucinación |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **qwen2.5:1.5b** | reglamento_egresados | Easy | ✗ | 52.67 | 0.84 | 0.67 | Sí |
+| | reglamento_profesor | Easy | ✗ | 47.41 | 0.90 | 0.93 | No |
+| | reglamento_trabajo | Easy | ✓ | 69.34 | 0.91 | 0.91 | No |
+| | derechos_humanos | Easy | ✓ | 38.92 | 0.89 | 0.86 | No |
+| | propiedad_intelectual | Easy | ✗ | 77.43 | 0.84 | 0.67 | No |
+| | bienestar | Easy | ✗ | 28.96 | 0.87 | 0.87 | Sí |
+| | context_followup (easy) | Easy | ✗ | 0.64 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 65.91 | 0.19 | 0.00 | No |
+| | context_followup (hard) | Hard | ✗ | 13.42 | 0.85 | 0.60 | No |
+| **qwen2.5:3b** | reglamento_egresados | Easy | ✗ | 29.67 | 0.51 | 0.33 | No |
+| | reglamento_profesor | Easy | ✗ | 59.71 | 0.14 | 0.00 | No |
+| | reglamento_trabajo | Easy | ✓ | 60.61 | 0.23 | 0.00 | No |
+| | derechos_humanos | Easy | ✓ | 36.02 | 0.23 | 0.00 | No |
+| | propiedad_intelectual | Easy | ✗ | 44.44 | 0.83 | 0.33 | No |
+| | bienestar | Easy | ✗ | 17.26 | 0.83 | 0.75 | Sí |
+| | context_followup (easy) | Easy | ✗ | 1.59 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 59.84 | 0.18 | 0.00 | No |
+| | context_followup (hard) | Hard | ✗ | 14.93 | 0.01 | 0.00 | No |
+| **llama3.2:1b** | reglamento_egresados | Easy | ✗ | 37.32 | 0.86 | 0.75 | No |
+| | reglamento_profesor | Easy | ✗ | 55.35 | 0.43 | 0.50 | No |
+| | reglamento_trabajo | Easy | ✓ | 64.67 | 0.73 | 0.64 | No |
+| | derechos_humanos | Easy | ✓ | 33.90 | 0.90 | 0.56 | No |
+| | propiedad_intelectual | Easy | ✗ | 43.78 | 0.57 | 0.17 | No |
+| | bienestar | Easy | ✗ | 19.97 | 0.32 | 0.00 | No |
+| | context_followup (easy) | Easy | ✗ | 1.58 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 59.34 | 0.67 | 0.33 | No |
+| | context_followup (hard) | Hard | ✗ | 14.96 | 0.31 | 0.00 | No |
+| **llama3.2:3b** | reglamento_egresados | Easy | ✗ | 35.17 | 0.85 | 0.56 | No |
+| | reglamento_profesor | Easy | ✗ | 53.09 | 0.87 | 0.71 | No |
+| | reglamento_trabajo | Easy | ✓ | 61.66 | 0.84 | 0.80 | No |
+| | derechos_humanos | Easy | ✓ | 34.39 | 0.66 | 1.00 | No |
+| | propiedad_intelectual | Easy | ✗ | 41.27 | 0.84 | 0.33 | Sí |
+| | bienestar | Easy | ✗ | 17.10 | 0.81 | 0.50 | No |
+| | context_followup (easy) | Easy | ✗ | 0.66 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 60.15 | 0.61 | 1.00 | No |
+| | context_followup (hard) | Hard | ✗ | 12.53 | 0.58 | 0.75 | Sí |
+| **phi3:mini** | reglamento_egresados | Easy | ✗ | 36.78 | 0.70 | 0.50 | No |
+| | reglamento_profesor | Easy | ✗ | 59.32 | 0.67 | 0.78 | Sí |
+| | reglamento_trabajo | Easy | ✓ | 64.19 | 0.68 | 0.00 | No |
+| | derechos_humanos | Easy | ✓ | 39.27 | 0.89 | 0.83 | No |
+| | propiedad_intelectual | Easy | ✗ | 43.64 | 0.80 | 0.50 | No |
+| | bienestar | Easy | ✗ | 26.60 | 0.54 | 0.00 | Sí |
+| | context_followup (easy) | Easy | ✗ | 0.60 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 62.35 | 0.53 | 0.50 | No |
+| | context_followup (hard) | Hard | ✗ | 11.84 | 0.57 | 0.00 | No |
+| **gemma3:1b** | reglamento_egresados | Easy | ✗ | 38.14 | 0.42 | 1.00 | No |
+| | reglamento_profesor | Easy | ✗ | 56.55 | 0.63 | 0.43 | No |
+| | reglamento_trabajo | Easy | ✓ | 61.55 | 0.87 | 0.75 | No |
+| | derechos_humanos | Easy | ✓ | 34.18 | 0.88 | 1.00 | Sí |
+| | propiedad_intelectual | Easy | ✗ | 41.86 | 0.78 | 0.42 | No |
+| | bienestar | Easy | ✗ | 16.04 | 0.51 | 0.40 | No |
+| | context_followup (easy) | Easy | ✗ | 0.59 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 63.38 | 0.68 | 0.67 | No |
+| | context_followup (hard) | Hard | ✗ | 13.40 | 0.44 | 0.50 | No |
+| **mistral:7b** | reglamento_egresados | Easy | ✗ | 37.02 | 0.86 | 0.67 | No |
+| | reglamento_profesor | Easy | ✗ | 57.55 | 0.56 | 1.00 | No |
+| | reglamento_trabajo | Easy | ✓ | 63.20 | 0.88 | 1.00 | No |
+| | derechos_humanos | Easy | ✓ | 34.82 | 0.91 | 0.50 | Sí |
+| | propiedad_intelectual | Easy | ✗ | 44.33 | 0.83 | 1.00 | No |
+| | bienestar | Easy | ✗ | 17.27 | 0.67 | 0.50 | No |
+| | context_followup (easy) | Easy | ✗ | 0.62 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 62.61 | 0.71 | 0.50 | Sí |
+| | context_followup (hard) | Hard | ✗ | 16.30 | 0.75 | 1.00 | No |
+| **llama3.1:8b** | reglamento_egresados | Easy | ✗ | 39.66 | 0.88 | 0.67 | Sí |
+| | reglamento_profesor | Easy | ✗ | 61.68 | 0.69 | 0.67 | No |
+| | reglamento_trabajo | Easy | ✓ | 67.53 | 0.76 | 0.71 | No |
+| | derechos_humanos | Easy | ✓ | 38.13 | 0.65 | 0.50 | No |
+| | propiedad_intelectual | Easy | ✗ | 50.06 | 0.82 | 1.00 | No |
+| | bienestar | Easy | ✗ | 22.96 | 0.69 | 0.33 | Sí |
+| | context_followup (easy) | Easy | ✗ | 1.84 | 0.52 | 0.00 | No |
+| | context_followup (medium) | Medium | ✗ | 60.03 | 0.18 | 0.00 | No |
+| | context_followup (hard) | Hard | ✗ | 19.18 | 0.77 | 0.22 | No |
 
 ### 11.7. Discusión
 
