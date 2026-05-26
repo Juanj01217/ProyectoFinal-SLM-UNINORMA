@@ -61,8 +61,12 @@ REWRITE_SLM_MODEL = "qwen2.5:1.5b"
 OLLAMA_KEEP_ALIVE = "30m"
 
 # === Parametros de Recuperacion ===
-RETRIEVAL_TOP_K = 12
-RETRIEVAL_SCORE_THRESHOLD = 0.25
+# Con RERANKER_ENABLED=False el vector store es la unica senal de ordenamiento,
+# asi que sobre-traer (TOP_K=12) inundaba el prompt con ruido y disparaba la
+# tasa de alucinacion. Bajamos a 8 candidatos y subimos el threshold de
+# similitud para filtrar chunks debiles antes de que lleguen al SLM.
+RETRIEVAL_TOP_K = 8
+RETRIEVAL_SCORE_THRESHOLD = 0.35
 
 # === Parametros de Generacion ===
 TEMPERATURE = 0.05

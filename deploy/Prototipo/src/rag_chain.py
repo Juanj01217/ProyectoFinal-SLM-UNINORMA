@@ -495,10 +495,16 @@ class RAGChain:
         # PASO 4.5: rerank cross-encoder.
         # Reordena por relevancia real (query, chunk) y recorta a TOP_N, lo que
         # compacta el prompt final ~50% y acelera la generacion del SLM.
+        # Si el reranker esta deshabilitado (CPU ARM no lo soporta sin penalizar
+        # latencia), recortamos igual a TOP_N confiando en el orden por
+        # similitud coseno del vector store. Esto evita inundar el prompt con
+        # chunks de baja relevancia que disparan alucinaciones.
         if RERANKER_ENABLED and unique_docs:
             unique_docs = rerank_documents(
                 question, unique_docs, top_n=RERANKER_TOP_N
             )
+        elif unique_docs:
+            unique_docs = unique_docs[:RERANKER_TOP_N]
 
         context = self._format_docs(unique_docs)
         attendance_note = _ATTENDANCE_RULE_NOTE if _is_attendance_question(question) else ""
