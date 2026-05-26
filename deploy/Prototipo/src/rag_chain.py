@@ -30,9 +30,18 @@ def _dedup_answer(text: str) -> str:
 # Patrones de "leak" del SLM: cuando termina la respuesta y empieza a copiar
 # los headers de fragmentos del prompt o a repetir la enumeracion.
 _LEAK_PATTERNS = (
-    # Header de fragmento completo: "[Art. N] [Fuente: ...]"
-    re.compile(r"\n\s*\[Art\.\s*\d+[a-z]?\][^\n]*\[Fuente:", re.IGNORECASE),
-    # Header parcial: "[Fuente: xxx]" en linea propia
+    # Multi-header dump: DOS headers [Art. N] [Fuente: ...] en proximidad
+    # (separados por <=150 chars de "texto entre lineas"). Eso es leak real
+    # (el SLM esta enumerando chunks crudos como si fueran respuesta).
+    # Una sola cita inline ("[Art. N] [Fuente: X]" + contenido sustancial
+    # detras) NO es leak; es la cita correcta del SLM y debe pasar el filtro.
+    re.compile(
+        r"\n\s*\[Art\.\s*\d+[a-z]?\][^\n]*\[Fuente:[^\]]+\][^\n]*\n"
+        r"(?:[^\n]{0,150}\n+){0,5}"
+        r"\s*\[Art\.\s*\d+[a-z]?\][^\n]*\[Fuente:",
+        re.IGNORECASE,
+    ),
+    # Header parcial: "[Fuente: xxx]" en linea propia (sin Art. previo)
     re.compile(r"\n\s*\[Fuente:[^\]]+\]\s*\n", re.IGNORECASE),
     # Re-enumeracion: "[Art. N] Son derechos/deberes..." indica que el SLM
     # esta regenerando la respuesta desde el principio.
@@ -50,6 +59,12 @@ _LEAK_PATTERNS = (
     # Leak de las pistas inyectadas: si el SLM regurgita la nota interna
     re.compile(r"\n\s*Pista\s+de\s+formato\s*:", re.IGNORECASE),
     re.compile(r"\n\s*MODO\s+(?:ESPECIFICO|LISTA)\s*:", re.IGNORECASE),
+    # Meta-coletillas del SLM despues de responder (auto-evaluacion / explicar
+    # como sigue las reglas del prompt). Son ruido genuino post-respuesta.
+    re.compile(r"\n\s*Esta\s+respuesta\s+(?:cumple|sigue|atiende|se\s+ajusta)", re.IGNORECASE),
+    re.compile(r"\n\s*(?:Las\s+)?pautas\s+solicitadas", re.IGNORECASE),
+    re.compile(r"\n\s*-?\s*Identifica\s+el\s+fragmento", re.IGNORECASE),
+    re.compile(r"\n\s*Como\s+respuesta\s+(?:a\s+)?(?:tu|la)\s+pregunta", re.IGNORECASE),
 )
 
 
