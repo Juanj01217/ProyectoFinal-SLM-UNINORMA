@@ -15,28 +15,18 @@ export default function ModelSelector({ models, selected, onSelect, loading }: P
         value={selected}
         onChange={(e) => onSelect(e.target.value)}
         disabled={loading}
-        className="appearance-none text-sm pr-8 pl-3 sm:pl-4 py-2 bg-white focus:outline-none focus:ring-2 disabled:opacity-50 cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.12)]"
-        style={{
-          border: "1px solid #D1C9BE",
-          borderRadius: 8,
-          color: "#1A1A1A",
-          fontWeight: 500,
-          minWidth: 130,
-          maxWidth: 200,
-        }}
+        className="appearance-none text-xs sm:text-sm font-medium tracking-wide pr-6 pl-3 py-1.5 bg-white/15 text-white border border-white/25 rounded-lg focus:outline-none focus:ring-1 focus:ring-white/40 disabled:opacity-50 cursor-pointer hover:bg-white/20 transition-colors duration-150 max-w-40 sm:max-w-50 truncate"
       >
         {models.map((m) => (
-          <option key={m} value={m}>
-            Modelo SLM: {m}
+          <option key={m} value={m} className="bg-[#8B1518] text-white">
+            {m}
           </option>
         ))}
       </select>
-      {/* Custom dropdown arrow */}
       <svg
-        className="pointer-events-none absolute right-2.5"
-        style={{ color: "#6B5E52" }}
-        width="14"
-        height="14"
+        className="pointer-events-none absolute right-2 text-white/70"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"

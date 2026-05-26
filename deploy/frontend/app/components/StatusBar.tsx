@@ -10,49 +10,45 @@ interface Props {
 export default function StatusBar({ status, loading }: Props) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <span className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" />
-        Verificando sistema...
+      <div className="hidden lg:flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-pulse" />
+        <span className="text-[11px] text-white/40 tracking-wide">Verificando...</span>
       </div>
     );
   }
 
   if (!status) {
     return (
-      <div className="flex items-center gap-2 text-sm text-red-600">
-        <span className="w-2 h-2 rounded-full bg-red-500" />
-        Sin conexión con el backend
+      <div className="hidden lg:flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+        <span className="text-[11px] text-red-300 tracking-wide">Sin conexión</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-4 text-sm flex-wrap">
-      <div className="flex items-center gap-1.5">
+    <div className="hidden lg:flex items-center gap-2 text-[11px] tracking-wide">
+      <span className="flex items-center gap-1">
         <span
-          className={`w-2 h-2 rounded-full ${
-            status.ollama_running ? "bg-green-500" : "bg-red-500"
+          className={`w-1.5 h-1.5 rounded-full ${
+            status.ollama_running ? "bg-green-400 shadow-[0_0_5px_#4ade80]" : "bg-red-400"
           }`}
         />
-        <span className={status.ollama_running ? "text-green-700" : "text-red-600"}>
-          Ollama {status.ollama_running ? "activo" : "inactivo"}
+        <span className={status.ollama_running ? "text-green-300" : "text-red-300"}>
+          {status.ollama_running ? "Ollama activo" : "Ollama inactivo"}
         </span>
-      </div>
-      <div className="flex items-center gap-1.5">
+      </span>
+      <span className="text-white/20">·</span>
+      <span className="flex items-center gap-1">
         <span
-          className={`w-2 h-2 rounded-full ${
-            status.vector_store_ready ? "bg-green-500" : "bg-yellow-500"
+          className={`w-1.5 h-1.5 rounded-full ${
+            status.vector_store_ready ? "bg-green-400 shadow-[0_0_5px_#4ade80]" : "bg-yellow-400"
           }`}
         />
-        <span className={status.vector_store_ready ? "text-green-700" : "text-yellow-700"}>
-          {status.vector_store_ready ? "Base de conocimiento lista" : "Cargando base..."}
+        <span className={status.vector_store_ready ? "text-green-300" : "text-yellow-300"}>
+          {status.vector_store_ready ? "Base lista" : "Cargando..."}
         </span>
-      </div>
-      {status.active_model && (
-        <div className="text-gray-500">
-          Modelo: <span className="font-mono font-medium text-gray-700">{status.active_model}</span>
-        </div>
-      )}
+      </span>
     </div>
   );
 }

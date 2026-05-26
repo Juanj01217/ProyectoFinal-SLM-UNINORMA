@@ -220,7 +220,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[url('/bg-Uninorma.png')] bg-cover bg-center bg-no-repeat">
+    <div className="flex flex-col h-dvh bg-[url('/bg-Uninorma.png')] bg-cover bg-center bg-no-repeat">
       {/* Header */}
       <header className="shrink-0 relative z-10 bg-linear-to-b from-[#A31C1F] to-[#881518] shadow-[0_4px_28px_rgba(0,0,0,0.35)]">
         {/* Línea dorada de acento */}
@@ -228,8 +228,8 @@ export default function HomePage() {
 
         {/* 3 columnas: [izq] [centro-logo] [der] */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          {/* Izquierda — Benchmark */}
-          <div className="flex items-center">
+          {/* Izquierda — Benchmark + Status */}
+          <div className="flex items-center gap-3">
             <Link
               href="/benchmark"
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200"
@@ -241,6 +241,8 @@ export default function HomePage() {
               </svg>
               <span className="hidden sm:inline font-medium tracking-wide text-sm">Benchmark</span>
             </Link>
+            <div className="hidden lg:block w-px h-4 bg-white/15" />
+            <StatusBar status={status} loading={statusLoading} />
           </div>
 
           {/* Centro — Logo de marca */}
@@ -259,11 +261,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {(status || statusLoading) && (
-          <div className="max-w-7xl mx-auto px-6 pb-1.5">
-            <StatusBar status={status} loading={statusLoading} />
-          </div>
-        )}
       </header>
 
       {/* Chat / Empty state */}
@@ -293,7 +290,7 @@ export default function HomePage() {
       </main>
 
       {/* Input bar — flotante sin fondo */}
-      <footer className="shrink-0 px-4 pb-4 pt-2 relative z-10 sm:mb-6">
+      <footer className="shrink-0 px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] relative z-10 sm:pb-4 sm:mb-6">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-end gap-2 bg-white rounded-2xl pl-4 pr-2 py-2 shadow-[0_8px_40px_rgba(0,0,0,0.14)] ring-1 ring-[#8B1518]/40 focus-within:ring-2 focus-within:ring-[#8B1518] focus-within:shadow-[0_8px_40px_rgba(139,21,24,0.18)] transition-all duration-300">
             <textarea
