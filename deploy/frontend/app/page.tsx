@@ -39,7 +39,7 @@ function UninorteLogo() {
       <div className="h-6 w-px bg-white/30 hidden sm:block" />
       <div className="hidden sm:flex flex-col leading-none">
         <span className="text-white font-semibold tracking-[0.14em] text-sm uppercase">Uninorma</span>
-        <span className="text-white/50 text-[10px] tracking-wider mt-0.5">Normatividad con IA</span>
+        <span className="text-white text-[10px] tracking-wider mt-0.5">Normatividad con IA</span>
       </div>
     </div>
   );
