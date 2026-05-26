@@ -51,10 +51,15 @@ RERANKER_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
 # alguna arquitectura, el pipeline cae automaticamente al slicing por
 # similitud coseno del vector store.
 RERANKER_ENABLED = True
-# Subido de 3 -> 5: con 3 chunks tiene riesgo de no entregar el chunk con
-# la lista completa de derechos/deberes al SLM cuando el reranker no es
-# perfecto. 5 chunks da margen sin saturar el prompt (~10k chars).
-RERANKER_TOP_N = 5
+# Bajado de 5 -> 3 tras observar regresion en preguntas no-list:
+# - qwen2.5:1.5b (1.5B params) tiene atencion limitada; con 5 chunks
+#   (~10k chars) tiende a mezclar fuentes y alucinar
+# - Con 3 chunks bien rankeados por jinaai-reranker-v2, el SLM tiene
+#   contexto enfocado y el chunk gold del top-3 sigue entrando
+# - Riesgo aceptado: en el caso raro donde el reranker pone el chunk gold
+#   en pos 4-5, lo perdemos. Pero el reranker actual es de calidad alta y
+#   eso es improbable con artículos completos que tienen señales claras.
+RERANKER_TOP_N = 3
 
 # === Configuracion de Ollama ===
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -92,8 +97,11 @@ RETRIEVAL_SCORE_THRESHOLD = 0.35
 # pregunta produzca la misma respuesta. Imprescindible para un asistente
 # normativo donde la consistencia importa mas que la creatividad.
 TEMPERATURE = 0.0
-# Subido de 700 -> 1100: listas largas (13 derechos a-m del Reglamento de
-# Estudiantes, ~2.5KB de texto literal) requieren ~700-900 tokens solo para
-# los items, mas la cita por linea. 1100 da margen sin saturar la latencia
-# en SLMs pequenos.
-MAX_TOKENS = 1100
+# Bajado de 1100 -> 700 tras observar que el SLM rellenaba el espacio
+# extra divagando o copiando headers en preguntas cortas (caso "Carnet"
+# suelto). 700 tokens cubren:
+#   - 10 derechos de egresados (~600-700 tokens, caso oro del demo)
+#   - Respuestas explicativas de 4-5 oraciones
+# Riesgo: una lista muy larga (ej. 13 deberes de estudiantes) puede
+# quedarse cortada al final. Evitable en el demo, asumible si pasa.
+MAX_TOKENS = 700
