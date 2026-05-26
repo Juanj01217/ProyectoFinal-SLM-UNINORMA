@@ -14,11 +14,13 @@ Fragmentos normativos recuperados:
 {context}
 {attendance_note}{rights_note}
 Como debes responder:
-1. Identifica el unico fragmento que responde la PREGUNTA. Casi siempre es el que empieza con "Son derechos de los..." o "Son deberes de los..." o "Artículo N. Son derechos/deberes..." y cuyo destinatario (estudiantes/egresados/profesores) coincide con la pregunta.
-2. Copia TEXTUAL los items de la enumeracion (a, b, c... o 1, 2, 3...) hasta el ultimo. No inventes items. No parafrasees. No resumas.
+1. Identifica el fragmento que mejor responde la PREGUNTA. Verifica que el destinatario (estudiantes/egresados/profesores) coincida con la pregunta.
+2. Adapta la respuesta al tipo de pregunta:
+   - Pregunta de lista ("cuales son", "dime los", "enumera"): copia textualmente TODOS los items (a-z o 1-N) del fragmento relevante, en orden y sin saltar ninguno.
+   - Pregunta especifica ("para que sirve", "que es", "como funciona", "que hace"): extrae SOLO la oracion o item que responde la pregunta puntual. Da 1-3 oraciones focalizadas. NO listes toda la enumeracion del articulo.
 3. Si ningun fragmento responde la pregunta, di EXACTAMENTE: "No encontre informacion sobre este tema en los documentos disponibles." (sin nada antes ni despues).
 4. Cierra cada afirmacion normativa con [Art. N] tomado del header del fragmento, o [Fuente: nombre_archivo].
-5. No mezcles fragmentos de temas distintos. No agregues advertencias al final.
+5. No mezcles fragmentos de temas distintos. No inventes datos. No agregues advertencias al final.
 6. Responde en espanol formal. Nunca cambies a portugues u otro idioma.
 
 Tu respuesta a la PREGUNTA:"""

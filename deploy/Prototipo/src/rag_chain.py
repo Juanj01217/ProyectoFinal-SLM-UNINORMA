@@ -108,6 +108,66 @@ _ATTENDANCE_KEYWORDS = {
     "perder", "pierdo", "pierde",
 }
 
+# Marcadores tipicos de pregunta de seguimiento (anafora explicita o implicita
+# por brevedad). Usamos esto para decidir si concatenamos el turno anterior al
+# query de retrieval.
+_FOLLOWUP_STARTERS_RC = (
+    "para que", "para qué", "y que", "y qué", "y cual", "y cuál",
+    "como es", "cómo es", "como funciona", "cómo funciona",
+    "que es", "qué es", "que hace", "qué hace", "que sirve", "qué sirve",
+    "cual es la funcion", "cuál es la función", "cual es la función",
+    "cuáles son las funciones", "cuales son las funciones",
+    "cuando aplica", "cuándo aplica", "cuanto cuesta", "cuánto cuesta",
+    "tambien", "también", "ademas", "además",
+    "explicame", "explícame", "dime mas", "dime más",
+    "como puedo", "cómo puedo", "como obtengo", "cómo obtengo",
+    "donde", "dónde",
+)
+
+_ANAPHORA_RC = {
+    "ese", "esa", "esos", "esas", "eso", "este", "esta", "estos", "estas",
+    "dicho", "dicha", "dichos", "dichas", "mismo", "misma",
+}
+
+# Entidades normativas: si la pregunta menciona una, es auto-contenida y no
+# necesita pegarle el turno anterior. Esto evita contaminar 'cuales son los
+# derechos de los estudiantes' con el contexto previo 'carnet de egresados'.
+_MAIN_ENTITIES_RC = (
+    "estudiante", "egresad", "profesor", "docente", "alumno",
+    "asignatura", "matricula", "matrícula",
+    "trabajador", "empleado", "personal directivo", "directivo",
+)
+
+
+def _has_main_entity(question: str) -> bool:
+    q = question.lower()
+    return any(e in q for e in _MAIN_ENTITIES_RC)
+
+
+def _is_short_followup(question: str, history: Optional[List[Dict[str, str]]] = None) -> bool:
+    """True si la pregunta luce como seguimiento que necesita contexto previo.
+
+    Reglas:
+      - Si la pregunta menciona una entidad principal (estudiante/egresado/etc.)
+        es auto-contenida -> NO followup, aunque sea corta.
+      - <= 5 palabras sin entidad -> followup.
+      - Contiene marcador de seguimiento ('para que sirve', 'que es...') en
+        cualquier parte -> followup si no tiene entidad.
+      - Primeras palabras tienen demostrativo (ese/esta/dicho) -> followup.
+    """
+    q = question.strip().lower()
+    if not q:
+        return False
+    if _has_main_entity(q):
+        return False
+    words = q.split()
+    if len(words) <= 5:
+        return True
+    if any(s in q for s in _FOLLOWUP_STARTERS_RC):
+        return True
+    head_terms = set(words[:3])
+    return bool(head_terms & _ANAPHORA_RC)
+
 _ATTENDANCE_DEFAULT_SESSIONS = 48
 _ATTENDANCE_THRESHOLD_PCT = 0.25
 _ATTENDANCE_LANG_THRESHOLD_PCT = 0.20
@@ -489,13 +549,26 @@ class RAGChain:
 
         context_hint = ""
         if history:
-            user_turns = [
-                m["content"].strip()
-                for m in history
-                if m.get("role") == "user" and m.get("content", "").strip()
-            ]
-            if user_turns and len(question.split()) <= 8:
-                context_hint = f"Contexto del turno anterior: {user_turns[-1]}\n"
+            # Solo enriquecer con contexto previo si la pregunta luce como
+            # seguimiento (carece de entidad propia). Si la pregunta ya menciona
+            # 'estudiantes' u otra entidad, es auto-contenida y agregar
+            # contexto cruzado degrada la query (ej. mezclar carnet/egresados
+            # con derechos/estudiantes).
+            if _is_short_followup(question, history):
+                user_turns = [
+                    m["content"].strip()
+                    for m in history
+                    if m.get("role") == "user" and m.get("content", "").strip()
+                ]
+                anchor = ""
+                for prev in reversed(user_turns):
+                    if _has_main_entity(prev):
+                        anchor = prev
+                        break
+                if not anchor and user_turns:
+                    anchor = user_turns[-1]
+                if anchor:
+                    context_hint = f"Contexto del turno anterior: {anchor}\n"
 
         prompt_text = QUERY_REWRITE_PROMPT.format(
             question=question,
@@ -577,17 +650,45 @@ class RAGChain:
 
         retrieval_query = self._rewrite_query_for_retrieval(question, history)
 
-        # Multi-query: recuperar con la pregunta original Y con el rewrite,
-        # luego unir resultados. El rewrite a veces sustituye palabras claves
-        # (deberes -> obligaciones) y pierde el chunk literal; el original
-        # actua como ancla semantica.
-        retrieved_a = self.retriever.invoke(retrieval_query)
-        retrieved_b = self.retriever.invoke(question) if retrieval_query != question else []
-        # Intercalar para que los hits unicos del original lleguen al reranker
+        # Si la pregunta luce como seguimiento corto ("para que sirve el carnet?"),
+        # concatenamos el ultimo turno del usuario para recuperar el contexto
+        # tematico. Esto resuelve la perdida de coherencia conversacional que
+        # vimos en el deploy con "el carnet" -> traer chunks de egresados.
+        followup_query = ""
+        if history and _is_short_followup(question, history):
+            user_turns = [
+                m["content"].strip() for m in history
+                if m.get("role") == "user" and m.get("content", "").strip()
+            ]
+            # Buscar el ultimo turno previo que MENCIONA una entidad
+            # (estudiante/egresado/etc.); ese es el contexto relevante. Si no
+            # hay, usar el ultimo turno simple. Esto evita arrastrar contextos
+            # cruzados cuando hay multiples cambios de tema en el historial.
+            anchor = ""
+            for prev in reversed(user_turns):
+                if _has_main_entity(prev):
+                    anchor = prev
+                    break
+            if not anchor and user_turns:
+                anchor = user_turns[-1]
+            if anchor:
+                followup_query = f"{anchor} {question}".strip()
+                _logger.debug("Followup -> query enriquecida: %r", followup_query)
+
+        # Multi-query: recuperar con la pregunta original, con el rewrite, y
+        # con la version enriquecida con historial si aplica. Union deduplicada.
+        # El rewrite a veces sustituye palabras claves; el original ancla
+        # semanticamente; el followup recupera el contexto del turno anterior.
+        queries = [retrieval_query]
+        if question != retrieval_query:
+            queries.append(question)
+        if followup_query and followup_query not in queries:
+            queries.append(followup_query)
+
         merged: List[Document] = []
         seen_keys: set = set()
-        for batch in (retrieved_a, retrieved_b):
-            for doc in batch:
+        for q in queries:
+            for doc in self.retriever.invoke(q):
                 key = doc.page_content[:120].strip()
                 if key not in seen_keys:
                     seen_keys.add(key)
@@ -624,23 +725,60 @@ class RAGChain:
         context = self._format_docs(unique_docs)
         attendance_note = _ATTENDANCE_RULE_NOTE if _is_attendance_question(question) else ""
 
-        rights_note = ""
+        # Decidir si esta es una pregunta de tipo "lista" (pide enumeracion
+        # completa) o "especifica" (pide un dato puntual).
+        # Pista de lista: solo si la pregunta menciona el tipo (derechos/deberes)
+        # Y usa formulacion enumerativa ('cuales son', 'lista', 'todos los',
+        # 'enumera') o pide directamente la lista ('dime los').
         q_lower = question.lower()
-        if "derecho" in q_lower and "deber" not in q_lower and "obligacion" not in q_lower:
-            # Pista positiva: indica al LLM cual fragmento usar, sin forzarlo a
-            # rechazar contenidos cuando hay derechos validos. Antes el note era
-            # demasiado defensivo y disparaba 'No encontre informacion' incluso
-            # con el fragmento correcto en el contexto.
-            rights_note = (
-                "Pista: busca el fragmento que empiece con 'Son derechos' o 'ARTICULO ... Son derechos'. "
-                "Ese fragmento contiene la enumeracion exacta. Copiala completa (todos los items). "
-                "Ignora fragmentos que empiecen con 'Son deberes' o que enumeren 'acatar/cumplir/respetar'.\n\n"
+        is_list_query = (
+            any(kw in q_lower for kw in (
+                "cuales son", "cuáles son", "lista de", "todos los",
+                "todas las", "enumera", "enumere", "enumerar",
+                "dime los", "dame los", "dime las", "dame las",
+                "dime todos", "dame todos", "menciona los", "menciona las",
+            ))
+            or q_lower.strip().startswith(("son derechos", "son deberes"))
+        )
+        is_specific_query = any(kw in q_lower for kw in (
+            "para que sirve", "para qué sirve", "que sirve", "qué sirve",
+            "que es", "qué es", "que hace", "qué hace",
+            "como funciona", "cómo funciona", "como es", "cómo es",
+            "funcion", "función", "uso de",
+        ))
+
+        rights_note = ""
+        if not is_specific_query:
+            if "derecho" in q_lower and "deber" not in q_lower and "obligacion" not in q_lower:
+                rights_note = (
+                    "Pista: busca el fragmento que empiece con 'Son derechos' o "
+                    "'ARTICULO ... Son derechos'. Ignora fragmentos que enumeren "
+                    "'acatar/cumplir/respetar' (esos son deberes).\n\n"
+                )
+            elif "deber" in q_lower and "derecho" not in q_lower:
+                rights_note = (
+                    "Pista: busca el fragmento que empiece con 'Son deberes' o "
+                    "'ARTICULO ... Son deberes'. Ignora fragmentos que empiecen "
+                    "con 'Son derechos'.\n\n"
+                )
+
+        # Pista de modo (lista vs especifico). El SLM responde mejor cuando
+        # sabe que extension de respuesta dar.
+        if is_specific_query:
+            rights_note += (
+                "MODO ESPECIFICO: el usuario pide UN dato puntual, no la lista.\n"
+                "- Responde en UNA sola oracion (maximo dos).\n"
+                "- Si el fragmento dice 'Son derechos/deberes: ... N) X cosa que hace Y...', "
+                "extrae solo el predicado de N (lo que hace) y reescribelo en una oracion natural.\n"
+                "- PROHIBIDO empezar con 'Son derechos' o 'Son deberes' o numerar items.\n"
+                "- Ejemplo: pregunta 'para que sirve el carnet?' con fragmento "
+                "'1) Obtener el carnet que los acredite como egresados ... facilitara el acceso al campus...' "
+                "-> 'El carnet acredita al portador como egresado y facilita el acceso al campus y a los servicios de la Oficina de Egresado [Art. 2].'\n\n"
             )
-        elif "deber" in q_lower and "derecho" not in q_lower:
-            rights_note = (
-                "Pista: busca el fragmento que empiece con 'Son deberes' o 'ARTICULO ... Son deberes'. "
-                "Ese fragmento contiene la enumeracion exacta. Copiala completa (todos los items). "
-                "Ignora fragmentos que empiecen con 'Son derechos'.\n\n"
+        elif is_list_query:
+            rights_note += (
+                "MODO LISTA: copia textualmente TODOS los items (a-z o 1-N) del "
+                "fragmento relevante, en orden, sin saltar ninguno y sin parafrasear.\n\n"
             )
 
         prompt_text = self.prompt.format(
