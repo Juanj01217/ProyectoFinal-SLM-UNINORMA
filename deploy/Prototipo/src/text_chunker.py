@@ -53,6 +53,20 @@ _ARTICLE_RE = re.compile(
     r"[\.\-\s°º:,]",
 )
 
+# Detector de secciones numeradas tipo "7. Son deberes...", "8. Son derechos...",
+# "9. La Universidad...". Usado en documentos cuyo cuerpo normativo se enumera
+# con "N." (Reg_Estudiantes_Febrero_2025.pdf) en lugar de "ARTÍCULO N".
+# Soporta dos formatos del PDF tras extraccion:
+#   - "7. Son deberes" (numero + punto + espacio)
+#   - "10.\nLa estudiante" (numero + punto + salto de linea)
+# IMPORTANTE: solo lineas que empiezan con N. + palabra capitalizada de oracion
+# (Son, La, El, Las, Los, Para, En, Cuando...). NO matchea sub-items "a. Ejercer"
+# ni decimales tipo "1.5" porque exigimos palabra capitalizada despues.
+_SECTION_RE = re.compile(
+    r"(?m)^[ \t]*(?P<num>\d{1,3})\.[ \t\r\n]+"
+    r"(?P<lead>[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)",
+)
+
 
 def _normalize_article_number(raw: str) -> str:
     """Convierte 'SEGUNDO' -> '2', 'Decimo' -> '10', '12' -> '12'."""
@@ -89,38 +103,161 @@ def _find_article_boundaries(text: str) -> List[Tuple[int, int, str]]:
     return boundaries
 
 
+def _find_section_boundaries(text: str) -> List[Tuple[int, int, str]]:
+    """Detecta secciones numeradas tipo 'N. Capitalized...' en el texto.
+
+    Usado como fallback cuando el documento no expone 'ARTÍCULO N' pero su
+    cuerpo normativo se enumera con 'N.' (caso Reg_Estudiantes_Febrero_2025).
+    Acepta numeros crecientes y reinicios (e.g. capitulo II usa 1-14, capitulo
+    III reinicia en 1). Filtra falsos positivos exigiendo que el segmento
+    tenga al menos ARTICLE_MIN_CHARS y descarta numeros aislados de paginacion.
+    """
+    raw_matches = list(_SECTION_RE.finditer(text))
+    if not raw_matches:
+        return []
+    # Heuristica anti-ruido: aceptar todos los matches con numero razonable.
+    # La validacion final se hace en _chunk_by_boundaries via min_chars.
+    matches = []
+    for m in raw_matches:
+        try:
+            n = int(m.group("num"))
+        except ValueError:
+            continue
+        if n <= 0 or n > 999:
+            continue
+        matches.append(m)
+    if not matches:
+        return []
+    boundaries: List[Tuple[int, int, str]] = []
+    for i, m in enumerate(matches):
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        boundaries.append((start, end, m.group("num")))
+    return boundaries
+
+
+def _chunk_by_boundaries(
+    text: str,
+    boundaries: List[Tuple[int, int, str]],
+    splitter: RecursiveCharacterTextSplitter,
+    max_chars: int,
+    min_chars: int,
+    unit_label: str,
+) -> List[Dict[str, Any]]:
+    """Divide texto en chunks usando una lista de fronteras precomputadas.
+
+    Cada elemento devuelto: {"text": str, "article": str | None, "start": int}
+    El campo `start` es el offset en el texto original (para mapear a pagina).
+    """
+    chunks: List[Dict[str, Any]] = []
+    preamble_end = boundaries[0][0]
+    preamble = text[:preamble_end].strip()
+    if len(preamble) >= min_chars:
+        chunks.append({"text": preamble, "article": None, "start": 0})
+
+    for start, end, num in boundaries:
+        unit_text = text[start:end].strip()
+        if len(unit_text) < min_chars:
+            continue
+        if len(unit_text) <= max_chars:
+            chunks.append({"text": unit_text, "article": num, "start": start})
+        else:
+            # Unidad muy larga: subdividir manteniendo el numero.
+            for sc in splitter.split_text(unit_text):
+                chunks.append({"text": sc, "article": num, "start": start})
+    return chunks
+
+
+def _chunk_full_document(
+    full_text: str,
+    splitter: RecursiveCharacterTextSplitter,
+    max_chars: int = ARTICLE_MAX_CHARS,
+    min_chars: int = ARTICLE_MIN_CHARS,
+) -> List[Dict[str, Any]]:
+    """Divide el documento completo respetando limites de articulos o secciones.
+
+    Estrategia:
+      1. Si detecta 'ARTÍCULO N' -> chunkea por articulo (mantiene listas
+         completas aun cuando crucen paginas).
+      2. Si NO encuentra articulos pero SI encuentra secciones numeradas tipo
+         'N. Son derechos...' (Reg_Estudiantes) -> chunkea por seccion.
+      3. Caso especial: documento con pocos articulos (preambulo) y muchas
+         secciones (cuerpo). Reg_Estudiantes tiene 3 ARTÍCULO PRIMERO/SEGUNDO/
+         TERCERO (preambulo) y 100+ secciones numeradas (cuerpo). Preferimos
+         secciones si superan al menos 2x los articulos.
+      4. Caso contrario -> splitter recursivo clasico.
+    """
+    article_boundaries = _find_article_boundaries(full_text)
+    section_boundaries = _find_section_boundaries(full_text)
+
+    # Heuristica: preferir secciones si son significativamente mas densas
+    # que los articulos (cuerpo del documento se enumera con N. y los pocos
+    # ARTÍCULOs detectados son solo preambulo/considerandos).
+    if section_boundaries and len(section_boundaries) >= 2 * max(len(article_boundaries), 1) + 1:
+        return _chunk_by_boundaries(
+            full_text, section_boundaries, splitter, max_chars, min_chars, "section"
+        )
+
+    if article_boundaries and len(article_boundaries) >= 2:
+        return _chunk_by_boundaries(
+            full_text, article_boundaries, splitter, max_chars, min_chars, "article"
+        )
+
+    if section_boundaries and len(section_boundaries) >= 3:
+        return _chunk_by_boundaries(
+            full_text, section_boundaries, splitter, max_chars, min_chars, "section"
+        )
+
+    # Fallback: splitter recursivo clasico. No tenemos offsets exactos, asumir 0.
+    return [
+        {"text": c, "article": None, "start": 0}
+        for c in splitter.split_text(full_text)
+    ]
+
+
+def _build_page_offsets(pages: List[Dict[str, Any]]) -> List[Tuple[int, int]]:
+    """Calcula offsets (start, page_number) de cada pagina en full_text.
+
+    full_text se construye con "\n\n".join(page_texts), asi que cada pagina
+    arranca en (suma de longitudes previas + 2 * indice).
+    """
+    offsets: List[Tuple[int, int]] = []
+    cursor = 0
+    for i, page in enumerate(pages):
+        offsets.append((cursor, page["page_number"]))
+        cursor += len(page["text"]) + (2 if i + 1 < len(pages) else 0)
+    return offsets
+
+
+def _resolve_page(start: int, page_offsets: List[Tuple[int, int]]) -> int:
+    """Dado un offset, devuelve el numero de pagina al que corresponde."""
+    page_num = page_offsets[0][1] if page_offsets else 1
+    for off, pnum in page_offsets:
+        if start >= off:
+            page_num = pnum
+        else:
+            break
+    return page_num
+
+
 def _chunk_by_article(
     page_text: str,
     splitter: RecursiveCharacterTextSplitter,
     max_chars: int = ARTICLE_MAX_CHARS,
     min_chars: int = ARTICLE_MIN_CHARS,
 ) -> List[Dict[str, Any]]:
-    """Divide una pagina respetando limites de articulos.
+    """Compat: divide una pagina respetando limites de articulos.
 
-    Returns: lista de {"text": str, "article": str | None}
+    Mantenido por compatibilidad con tests u otros llamadores. Para la ingesta
+    real preferimos `_chunk_full_document` que opera sobre todo el texto.
     """
     boundaries = _find_article_boundaries(page_text)
     if not boundaries:
-        return [{"text": c, "article": None} for c in splitter.split_text(page_text)]
-
-    chunks: List[Dict[str, Any]] = []
-    preamble = page_text[: boundaries[0][0]].strip()
-    if len(preamble) >= min_chars:
-        chunks.append({"text": preamble, "article": None})
-
-    for start, end, art_num in boundaries:
-        article_text = page_text[start:end].strip()
-        if len(article_text) < min_chars:
-            continue
-        if len(article_text) <= max_chars:
-            chunks.append({"text": article_text, "article": art_num})
-        else:
-            # Articulo muy largo: subdividir pero etiquetar todos los sub-chunks
-            # con el mismo numero de articulo para mantener trazabilidad.
-            sub_chunks = splitter.split_text(article_text)
-            for sc in sub_chunks:
-                chunks.append({"text": sc, "article": art_num})
-    return chunks
+        return [
+            {"text": c, "article": None, "start": 0}
+            for c in splitter.split_text(page_text)
+        ]
+    return _chunk_by_boundaries(page_text, boundaries, splitter, max_chars, min_chars, "article")
 
 
 def chunk_document(
@@ -129,32 +266,29 @@ def chunk_document(
 ) -> List[Document]:
     """Divide el texto de un documento en chunks de LangChain.
 
-    Cada chunk incluye metadata con: source, title, page, chunk_index y
-    opcionalmente article (numero de articulo detectado).
+    Operamos sobre full_text (no por pagina) para no cortar articulos/secciones
+    que crucen el limite de pagina. Cada chunk incluye metadata con: source,
+    title, page (estimada por offset), chunk_index y opcionalmente article.
     """
-    chunks = []
-    chunk_index = 0
+    full_text = doc_data.get("full_text", "")
+    if not full_text.strip():
+        return []
 
-    for page_info in doc_data["pages"]:
-        page_text = page_info["text"]
-        if not page_text.strip():
-            continue
+    raw_chunks = _chunk_full_document(full_text, splitter)
+    page_offsets = _build_page_offsets(doc_data.get("pages", []))
 
-        page_chunks = _chunk_by_article(page_text, splitter)
-
-        for ch in page_chunks:
-            metadata = {
-                "source": doc_data["filename"],
-                "title": doc_data["title"],
-                "page": page_info["page_number"],
-                "chunk_index": chunk_index,
-            }
-            if ch["article"] is not None:
-                metadata["article"] = ch["article"]
-
-            chunks.append(Document(page_content=ch["text"], metadata=metadata))
-            chunk_index += 1
-
+    chunks: List[Document] = []
+    for idx, ch in enumerate(raw_chunks):
+        page = _resolve_page(ch.get("start", 0), page_offsets) if page_offsets else 1
+        metadata: Dict[str, Any] = {
+            "source": doc_data.get("filename", "?"),
+            "title": doc_data.get("title", ""),
+            "page": page,
+            "chunk_index": idx,
+        }
+        if ch.get("article") is not None:
+            metadata["article"] = ch["article"]
+        chunks.append(Document(page_content=ch["text"], metadata=metadata))
     return chunks
 
 
@@ -175,11 +309,11 @@ def chunk_all_documents(
         all_chunks.extend(doc_chunks)
         print(
             f"  {doc_data['filename']}: {len(doc_chunks)} chunks "
-            f"({article_chunks} por articulo)"
+            f"({article_chunks} con articulo/seccion)"
         )
 
     print(
         f"\nTotal: {len(all_chunks)} chunks de {len(documents)} documentos "
-        f"({total_articles} anclados a articulo)"
+        f"({total_articles} anclados a articulo/seccion)"
     )
     return all_chunks

@@ -212,15 +212,34 @@ def query_stream(body: QueryRequest):
     history_dicts = [{"role": h.role, "content": h.content} for h in body.history]
     sources_info, _, token_stream = chain.invoke_stream(body.question, history=history_dicts)
 
+    from src.rag_chain import _truncate_at_leak
+
     def generate():
         try:
             accumulated = ""
+            sent_len = 0
             for chunk in token_stream:
                 token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                if token:
-                    accumulated += token
-                    yield f"data: {json.dumps({'token': token})}\n\n"
-            # Si el LLM decidio por su cuenta que no habia informacion, no mostrar fuentes
+                if not token:
+                    continue
+                accumulated += token
+
+                # Detectar leak en el texto acumulado. Si el truncate cambia la
+                # longitud, dejamos de enviar tokens (el cliente ya tiene texto
+                # legitimo; lo que viene a continuacion es ruido).
+                clean = _truncate_at_leak(accumulated)
+                if len(clean) < len(accumulated):
+                    pending = clean[sent_len:]
+                    if pending:
+                        yield f"data: {json.dumps({'token': pending})}\n\n"
+                        sent_len = len(clean)
+                    break
+
+                yield f"data: {json.dumps({'token': token})}\n\n"
+                sent_len = len(accumulated)
+
+            # Sustituimos por la version limpia final para verificacion del "no info".
+            accumulated = _truncate_at_leak(accumulated)
             llm_said_no_info = "no encontre informacion" in accumulated.lower()[:120]
             final_sources = [] if llm_said_no_info else sources_info
             yield f"data: {json.dumps({'done': True, 'sources': final_sources, 'model': body.model})}\n\n"

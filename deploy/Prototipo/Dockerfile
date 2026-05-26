@@ -5,13 +5,17 @@ WORKDIR /app
 # curl para health checks en el entrypoint
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Instalar dependencias Python y pre-descargar modelo de embeddings
+# Instalar dependencias Python y pre-descargar modelo de embeddings.
+# Pre-cargar el reranker en el build evita cold-start de 2-5 min en la primera
+# consulta de produccion (descarga ~280 MB desde HuggingFace). El modelo coincide
+# con RERANKER_MODEL en config.py: jinaai/jina-reranker-v2-base-multilingual
+# (fastembed 0.8 no soporta BAAI/bge-reranker-v2-m3).
 COPY Prototipo/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
     python -c "from sentence_transformers import SentenceTransformer; \
                SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')" && \
     python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; \
-               TextCrossEncoder(model_name='BAAI/bge-reranker-v2-m3')" || true
+               TextCrossEncoder(model_name='jinaai/jina-reranker-v2-base-multilingual')"
 
 # Copiar el código fuente y datos (incluye data/chroma_db y data/raw)
 COPY Prototipo/ .

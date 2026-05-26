@@ -27,6 +27,53 @@ def _dedup_answer(text: str) -> str:
     return "\n".join(result)
 
 
+# Patrones de "leak" del SLM: cuando termina la respuesta y empieza a copiar
+# los headers de fragmentos del prompt o a repetir la enumeracion.
+_LEAK_PATTERNS = (
+    # Header de fragmento completo: "[Art. N] [Fuente: ...]"
+    re.compile(r"\n\s*\[Art\.\s*\d+[a-z]?\][^\n]*\[Fuente:", re.IGNORECASE),
+    # Header parcial: "[Fuente: xxx]" en linea propia
+    re.compile(r"\n\s*\[Fuente:[^\]]+\]\s*\n", re.IGNORECASE),
+    # Re-enumeracion: "[Art. N] Son derechos/deberes..." indica que el SLM
+    # esta regenerando la respuesta desde el principio.
+    re.compile(r"\n\s*\[Art\.\s*\d+\]\s+Son\s+(?:derechos|deberes)", re.IGNORECASE),
+    # Inicio de re-enumeracion sin cita: el SLM repite "8. Son derechos..."
+    re.compile(r"\n\s*\d{1,3}\.\s+Son\s+(?:derechos|deberes)\s+(?:de|del)", re.IGNORECASE),
+    # Headers de prompt filtrados al output
+    re.compile(r"\n\s*PREGUNTA(?:\s+del\s+usuario)?\s*:", re.IGNORECASE),
+    re.compile(r"\n\s*Fragmentos?\s+normativos?\s*:", re.IGNORECASE),
+    re.compile(r"\n\s*REGLAS\s*:", re.IGNORECASE),
+    re.compile(r"\n\s*INSTRUCCION\s*:", re.IGNORECASE),
+    re.compile(r"\n\s*Tu\s+respuesta", re.IGNORECASE),
+    # Cierre con "No encontre" despues de haber respondido = artefacto
+    re.compile(r"\n\s*No\s+encontre\s+informacion", re.IGNORECASE),
+)
+
+
+def _truncate_at_leak(text: str) -> str:
+    """Corta la respuesta cuando el SLM empieza a echar headers o instrucciones.
+
+    Util porque qwen2.5:1.5b suele continuar generando despues de su respuesta
+    legitima, copiando el header del fragmento (`[Art. N] [Fuente: ...]`) o
+    repitiendo la enumeracion. Truncamos en el primer leak detectado.
+    """
+    if not text:
+        return text
+    # Si la respuesta ES 'No encontre informacion...' entera, no la trunques.
+    low = text.lower().lstrip()
+    if low.startswith("no encontre informacion"):
+        return text
+    earliest = len(text)
+    # Buscar el primer leak DESPUES de los primeros 60 chars (para no cortar
+    # respuestas legitimas que empiezan citando un articulo).
+    search_start = min(60, len(text))
+    for pat in _LEAK_PATTERNS:
+        m = pat.search(text, pos=search_start)
+        if m and m.start() < earliest:
+            earliest = m.start()
+    return text[:earliest].rstrip()
+
+
 _NO_INFO = (
     "No encontre documentacion especifica de Uninorte sobre este tema. "
     "Para orientacion, te recomendamos consultar directamente con Bienestar Universitario "
@@ -52,7 +99,14 @@ _OMNIPRESENT = {
     "conforme", "mediante", "disposicion", "articulo",
 }
 
-_ATTENDANCE_KEYWORDS = {"falto", "faltar", "faltas", "clase", "clases", "asistencia", "inasistencia", "ausencia"}
+_ATTENDANCE_KEYWORDS = {
+    "falto", "faltar", "falte", "faltas", "fallar",
+    "clase", "clases", "asignatura",
+    "asistencia", "asistir", "asisto", "asisti",
+    "inasistencia", "inasistencias",
+    "ausencia", "ausencias", "ausentar", "ausento", "ausenta", "ausente",
+    "perder", "pierdo", "pierde",
+}
 
 _ATTENDANCE_DEFAULT_SESSIONS = 48
 _ATTENDANCE_THRESHOLD_PCT = 0.25
@@ -291,20 +345,23 @@ def create_llm(
 
     keep_alive mantiene el modelo cargado en memoria de Ollama tras inactividad,
     eliminando el cold-start de 5-15s que sufre el primer query tras pausa larga.
+
+    top_p=0.9 / top_k=40 (relajados desde 0.3 / 20): con temperature=0 son
+    irrelevantes para el determinismo, pero valores bajos en algunos backends
+    de Ollama recortaban tokens correctos cuando la distribucion era amplia
+    (e.g. el modelo equivocaba la enumeracion correcta por una abreviada).
+    repeat_penalty=1.1 (bajado desde 1.2): el 1.2 penalizaba listas tipo "a. b.
+    c. d. ..." porque comparte tokens entre items y truncaba antes del final.
     """
-    # Nota: `seed` NO es un campo aceptado por langchain_community.llms.Ollama
-    # (model_config = ConfigDict(extra="forbid")). Con temperature=0.0 el
-    # decoding es greedy y `top_p`/`top_k`/`seed` son irrelevantes para
-    # determinismo, asi que omitimos seed para no romper Pydantic.
     return Ollama(
         model=model_name,
         base_url=OLLAMA_BASE_URL,
         temperature=temperature,
-        top_p=0.3,
-        top_k=20,
+        top_p=0.9,
+        top_k=40,
         num_predict=max_tokens,
         system=SYSTEM_PROMPT_ES,
-        repeat_penalty=1.2,
+        repeat_penalty=1.1,
         keep_alive=OLLAMA_KEEP_ALIVE,
     )
 
@@ -341,17 +398,44 @@ class RAGChain:
         return format_context_from_docs(docs)
 
     @staticmethod
+    def _is_toc_or_preamble(doc: Document) -> bool:
+        """Detecta chunks de tabla de contenido o preambulo (sin numero de
+        articulo/seccion, mayormente headings cortos en mayusculas).
+
+        Estos fragmentos confunden al SLM porque mencionan 'DEBERES', 'DERECHOS'
+        en forma de TOC y el modelo cree que responden la pregunta cuando solo
+        son indice. Los excluimos cuando hay otros chunks con metadata real.
+        """
+        if doc.metadata.get("article"):
+            return False
+        content = doc.page_content
+        if "TABLA DE CONTENIDO" in content[:200].upper():
+            return True
+        # Heuristica: muchas lineas cortas en mayusculas y pocas oraciones.
+        lines = [ln.strip() for ln in content.split("\n") if ln.strip()]
+        if len(lines) < 8:
+            return False
+        upper_short = sum(1 for ln in lines if ln.upper() == ln and 3 < len(ln) < 60)
+        return upper_short >= max(5, len(lines) // 3)
+
+    @staticmethod
     def _filter_and_dedup(docs: List[Document], seen: set, question: str = "") -> List[Document]:
         result = []
         q_lower = question.lower()
         is_student_query = "estudiant" in q_lower
         is_alumni_query = "egresad" in q_lower
 
+        # Si hay chunks con article metadata, descartamos los TOC sin articulo.
+        any_with_article = any(d.metadata.get("article") for d in docs)
+
         for doc in docs:
             title = doc.metadata.get("title", "").lower()
             source = doc.metadata.get("source", "").lower()
 
             if any(kw in title or kw in source for kw in _NON_NORMATIVE_KW):
+                continue
+
+            if any_with_article and RAGChain._is_toc_or_preamble(doc):
                 continue
 
             is_alumni_doc = "egresado" in title or "egresado" in source
@@ -465,6 +549,7 @@ class RAGChain:
             return {"answer": _NO_INFO, "source_documents": []}
         raw_answer = self.llm.invoke(prompt_text)
         answer = raw_answer.content if hasattr(raw_answer, "content") else str(raw_answer)
+        answer = _truncate_at_leak(answer)
         answer = _dedup_answer(answer)
         answer = _validate_no_invented_acronyms(answer, source_docs)
         answer = _enforce_citations(answer, source_docs)
@@ -478,8 +563,10 @@ class RAGChain:
         """Nucleo del pipeline RAG.
 
         Flujo:
-          PASO 1 - Query Rewriting
-          PASO 2 - Retrieval
+          PASO 1 - Query Rewriting (a frase normativa formal)
+          PASO 2 - Retrieval MULTI-QUERY (original + rewritten -> union dedup)
+                   Asegura que si el rewriter degrada la query, la version
+                   original todavia recupera el chunk correcto.
           PASO 3 - Cobertura de terminos
           PASO 4 - Fallback keyword si no cubre
           PASO 4.5 - Rerank cross-encoder a RERANKER_TOP_N
@@ -489,9 +576,25 @@ class RAGChain:
             history = []
 
         retrieval_query = self._rewrite_query_for_retrieval(question, history)
-        source_docs = self.retriever.invoke(retrieval_query)
+
+        # Multi-query: recuperar con la pregunta original Y con el rewrite,
+        # luego unir resultados. El rewrite a veces sustituye palabras claves
+        # (deberes -> obligaciones) y pierde el chunk literal; el original
+        # actua como ancla semantica.
+        retrieved_a = self.retriever.invoke(retrieval_query)
+        retrieved_b = self.retriever.invoke(question) if retrieval_query != question else []
+        # Intercalar para que los hits unicos del original lleguen al reranker
+        merged: List[Document] = []
+        seen_keys: set = set()
+        for batch in (retrieved_a, retrieved_b):
+            for doc in batch:
+                key = doc.page_content[:120].strip()
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    merged.append(doc)
+
         seen_fingerprints: set = set()
-        unique_docs = self._filter_and_dedup(source_docs, seen_fingerprints, question)
+        unique_docs = self._filter_and_dedup(merged, seen_fingerprints, question)
 
         terms = _key_terms(question)
         needs_fallback = (
@@ -524,11 +627,20 @@ class RAGChain:
         rights_note = ""
         q_lower = question.lower()
         if "derecho" in q_lower and "deber" not in q_lower and "obligacion" not in q_lower:
+            # Pista positiva: indica al LLM cual fragmento usar, sin forzarlo a
+            # rechazar contenidos cuando hay derechos validos. Antes el note era
+            # demasiado defensivo y disparaba 'No encontre informacion' incluso
+            # con el fragmento correcto en el contexto.
             rights_note = (
-                "[ADVERTENCIA CRITICA PARA EL LLM]: El usuario esta preguntando EXCLUSIVAMENTE por DERECHOS. "
-                "Revisa bien los fragmentos: si un fragmento habla de 'acatar', 'cumplir', 'responder', 'asumir', "
-                "'tratar a todos...', etc., eso es un DEBER/OBLIGACION. NO LO INCLUYAS EN TU RESPUESTA DE DERECHOS. "
-                "Si la informacion es solo sobre deberes, responde 'No encontre informacion sobre derechos'.\n"
+                "Pista: busca el fragmento que empiece con 'Son derechos' o 'ARTICULO ... Son derechos'. "
+                "Ese fragmento contiene la enumeracion exacta. Copiala completa (todos los items). "
+                "Ignora fragmentos que empiecen con 'Son deberes' o que enumeren 'acatar/cumplir/respetar'.\n\n"
+            )
+        elif "deber" in q_lower and "derecho" not in q_lower:
+            rights_note = (
+                "Pista: busca el fragmento que empiece con 'Son deberes' o 'ARTICULO ... Son deberes'. "
+                "Ese fragmento contiene la enumeracion exacta. Copiala completa (todos los items). "
+                "Ignora fragmentos que empiecen con 'Son derechos'.\n\n"
             )
 
         prompt_text = self.prompt.format(

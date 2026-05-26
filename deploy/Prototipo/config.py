@@ -16,16 +16,21 @@ SCRAPING_PDF_DIR = PROJECT_ROOT.parent / "WebScraping" / "reglamentos"
 # Chunking jerarquico: cada articulo del reglamento es la unidad minima.
 # Solo se subdivide si excede ARTICLE_MAX_CHARS. CHUNK_SIZE/CHUNK_OVERLAP se
 # mantienen como fallback para documentos sin estructura de articulos.
+# ARTICLE_MAX_CHARS subido de 2500 a 4000: listas largas como "8. Son derechos
+# de los estudiantes: a... m." (Reg_Estudiantes) cabian fragmentadas. Con 4000
+# entran completas en un solo chunk -> el SLM ve los 13 items de una.
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 200
 SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
-ARTICLE_MAX_CHARS = 2500
+ARTICLE_MAX_CHARS = 4000
 ARTICLE_MIN_CHARS = 80
 
 # Version del chunker. Incrementar cuando cambie la logica de detectar
 # articulos o partir texto, para que el entrypoint detecte mismatch y
 # re-indexe automaticamente la base vectorial.
-CHUNKER_VERSION = "v2-ordinales"
+# v3-secciones: chunking sobre full_text + deteccion de secciones numeradas
+# "N. Son derechos...". Resuelve fragmentacion cross-page de listas.
+CHUNKER_VERSION = "v3-secciones"
 
 # === Modelos de Embedding ===
 EMBEDDING_MODELS = {
@@ -38,14 +43,18 @@ DEFAULT_EMBEDDING_MODEL = "mpnet-multilingual"
 # Modelo cross-encoder multilingue que reordena los chunks recuperados.
 # Multiplica el retrieval_accuracy y permite reducir top_k post-rerank,
 # compactando el contexto que ve el SLM y bajando latencia de generacion.
-RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-# Reactivado con fastembed (ONNX int8), que corre 3-5x mas rapido en CPU ARM
-# que la version PyTorch de sentence-transformers. Si fastembed no carga, el
-# pipeline cae al slicing por similitud coseno automaticamente.
+# Nota: fastembed 0.8+ NO soporta 'BAAI/bge-reranker-v2-m3'. Usamos
+# 'jinaai/jina-reranker-v2-base-multilingual' que SI esta en su catalogo de
+# modelos ONNX y es multilingue nativo (espanol incluido).
+RERANKER_MODEL = "jinaai/jina-reranker-v2-base-multilingual"
+# Activado: fastembed (ONNX int8) carga el modelo de reranking. Si falla en
+# alguna arquitectura, el pipeline cae automaticamente al slicing por
+# similitud coseno del vector store.
 RERANKER_ENABLED = True
-# Bajado de 5 -> 3: el SLM responde mejor con 3 chunks bien rankeados que con
-# 5 donde 2 pueden estar contaminados con tema adyacente.
-RERANKER_TOP_N = 3
+# Subido de 3 -> 5: con 3 chunks tiene riesgo de no entregar el chunk con
+# la lista completa de derechos/deberes al SLM cuando el reranker no es
+# perfecto. 5 chunks da margen sin saturar el prompt (~10k chars).
+RERANKER_TOP_N = 5
 
 # === Configuracion de Ollama ===
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -83,6 +92,8 @@ RETRIEVAL_SCORE_THRESHOLD = 0.35
 # pregunta produzca la misma respuesta. Imprescindible para un asistente
 # normativo donde la consistencia importa mas que la creatividad.
 TEMPERATURE = 0.0
-# Subido de 500 -> 700 para que las enumeraciones de derechos/deberes (que
-# pueden llegar a 10 items) no se trunquen a mitad de palabra.
-MAX_TOKENS = 700
+# Subido de 700 -> 1100: listas largas (13 derechos a-m del Reglamento de
+# Estudiantes, ~2.5KB de texto literal) requieren ~700-900 tokens solo para
+# los items, mas la cita por linea. 1100 da margen sin saturar la latencia
+# en SLMs pequenos.
+MAX_TOKENS = 1100
