@@ -292,13 +292,16 @@ def create_llm(
     keep_alive mantiene el modelo cargado en memoria de Ollama tras inactividad,
     eliminando el cold-start de 5-15s que sufre el primer query tras pausa larga.
     """
+    # Nota: `seed` NO es un campo aceptado por langchain_community.llms.Ollama
+    # (model_config = ConfigDict(extra="forbid")). Con temperature=0.0 el
+    # decoding es greedy y `top_p`/`top_k`/`seed` son irrelevantes para
+    # determinismo, asi que omitimos seed para no romper Pydantic.
     return Ollama(
         model=model_name,
         base_url=OLLAMA_BASE_URL,
         temperature=temperature,
         top_p=0.3,
         top_k=20,
-        seed=42,
         num_predict=max_tokens,
         system=SYSTEM_PROMPT_ES,
         repeat_penalty=1.2,
