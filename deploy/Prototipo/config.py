@@ -37,7 +37,14 @@ EMBEDDING_MODELS = {
     "minilm-multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
     "mpnet-multilingual": "paraphrase-multilingual-mpnet-base-v2",
 }
-DEFAULT_EMBEDDING_MODEL = "mpnet-multilingual"
+# Revertido de mpnet -> minilm tras observar que mpnet (768 dims) introducia
+# semantica demasiado amplia en queries cortas, contaminando el top-K con
+# chunks adyacentes al tema real (ej. Art. 108 "medio oficial de comunicacion"
+# salia para "carnet de estudiantes"). MiniLM (384 dims) es mas lexical y
+# tiene una distribucion de scores conocida que se calibra con threshold=0.4.
+# El chunker v3 (ordinales + secciones) sigue activo, asi que el caso oro
+# de derechos de egresados (Art. SEGUNDO completo) se conserva.
+DEFAULT_EMBEDDING_MODEL = "minilm-multilingual"
 
 # === Reranker (cross-encoder) ===
 # Modelo cross-encoder multilingue que reordena los chunks recuperados.
@@ -85,12 +92,15 @@ REWRITE_SLM_MODEL = "qwen2.5:1.5b"
 OLLAMA_KEEP_ALIVE = "30m"
 
 # === Parametros de Recuperacion ===
-# Con RERANKER_ENABLED=False el vector store es la unica senal de ordenamiento,
-# asi que sobre-traer (TOP_K=12) inundaba el prompt con ruido y disparaba la
-# tasa de alucinacion. Bajamos a 8 candidatos y subimos el threshold de
-# similitud para filtrar chunks debiles antes de que lleguen al SLM.
-RETRIEVAL_TOP_K = 8
-RETRIEVAL_SCORE_THRESHOLD = 0.35
+# Calibrados para MiniLM (384 dims):
+#   - TOP_K=6: con menos candidatos al reranker, menor probabilidad de que
+#     entre un chunk de tema adyacente. 2 dias atras esta combinacion daba
+#     mejor lucidez en queries cortas y ambiguas.
+#   - threshold=0.4: MiniLM produce distribucion de scores mas conservadora
+#     que mpnet; 0.4 es el filtro calibrado historicamente para evitar
+#     ruido en queries cortas tipo "carnet" sin perder cobertura.
+RETRIEVAL_TOP_K = 6
+RETRIEVAL_SCORE_THRESHOLD = 0.40
 
 # === Parametros de Generacion ===
 # temperature=0.0 + top_p/top_k acotados en create_llm() garantizan que la misma
