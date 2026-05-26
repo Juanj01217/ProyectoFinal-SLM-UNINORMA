@@ -16,10 +16,10 @@ SCRAPING_PDF_DIR = PROJECT_ROOT.parent / "WebScraping" / "reglamentos"
 # Chunking jerarquico: cada articulo del reglamento es la unidad minima.
 # Solo se subdivide si excede ARTICLE_MAX_CHARS. CHUNK_SIZE/CHUNK_OVERLAP se
 # mantienen como fallback para documentos sin estructura de articulos.
-CHUNK_SIZE = 1000
+CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 200
 SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
-ARTICLE_MAX_CHARS = 1500
+ARTICLE_MAX_CHARS = 2500
 ARTICLE_MIN_CHARS = 80
 
 # === Modelos de Embedding ===
@@ -34,7 +34,7 @@ DEFAULT_EMBEDDING_MODEL = "mpnet-multilingual"
 # Multiplica el retrieval_accuracy y permite reducir top_k post-rerank,
 # compactando el contexto que ve el SLM y bajando latencia de generacion.
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-RERANKER_ENABLED = True
+RERANKER_ENABLED = False
 RERANKER_TOP_N = 5  # cuantos chunks pasan al prompt final despues del rerank
 
 # === Configuracion de Ollama ===
@@ -69,4 +69,4 @@ TEMPERATURE = 0.05
 # Reducido de 600 -> 250. El system prompt limita a 5 oraciones, ~200 tokens
 # en espanol. 250 deja margen y recorta la latencia de generacion hasta 50%
 # cuando el modelo es verboso.
-MAX_TOKENS = 250
+MAX_TOKENS = 500

@@ -568,7 +568,7 @@ def create_rag_chain(
     - prompt:      Template con XML isolation de historial y fragmentos
     """
     llm = create_llm(model_name, temperature)
-    rewrite_llm = create_rewrite_llm()
+    rewrite_llm = create_rewrite_llm(model_name)
 
     # Precarga el reranker ahora para que el primer query no pague la descarga
     # (~568MB BAAI/bge-reranker-v2-m3) ni el cold-start del CrossEncoder.
