@@ -72,7 +72,7 @@ function BlobCard({ question, onClick }: Readonly<{ question: string; onClick: (
           <div className="w-5 h-5 rounded-full bg-[#9D1B1E]/10 flex items-center justify-center shrink-0 mt-0.5">
             <span className="text-[#9D1B1E] text-xs font-bold leading-none">?</span>
           </div>
-          <p className="text-[0.8rem] sm:text-[0.88rem] font-medium leading-[1.5] text-[#1A1A1A] m-0">
+          <p className="text-[0.8rem] sm:text-[0.88rem] font-medium leading-normal text-[#1A1A1A] m-0">
             {question}
           </p>
         </div>
