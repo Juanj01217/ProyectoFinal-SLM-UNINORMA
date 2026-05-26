@@ -56,31 +56,41 @@ PYEOF
 echo "[2/3] Verificación de modelo completada."
 
 # --- 3. Verificar ChromaDB ---
+# Firma de ingesta: combina los parametros que afectan el contenido de los
+# chunks (embedding model + tamanos de chunking). Si cualquiera cambia en
+# config.py, el siguiente arranque detecta mismatch y re-indexa automatico.
 echo ""
 echo "[3/3] Verificando base de datos vectorial (ChromaDB)..."
+EXPECTED_SIG=$(python3 -c "from config import DEFAULT_EMBEDDING_MODEL, ARTICLE_MAX_CHARS, CHUNK_SIZE, CHUNK_OVERLAP; print(f'{DEFAULT_EMBEDDING_MODEL}|amax={ARTICLE_MAX_CHARS}|csize={CHUNK_SIZE}|cover={CHUNK_OVERLAP}')")
+SIG_FILE="/app/data/chroma_db/.ingest_signature"
 NEEDS_REINDEX=false
+
 if [ ! -d "/app/data/chroma_db" ] || [ -z "$(ls -A /app/data/chroma_db 2>/dev/null)" ]; then
     NEEDS_REINDEX=true
     echo "  ChromaDB no encontrada."
-elif [ -f "/app/data/chroma_db/.embedding_model" ]; then
-    CURRENT_MODEL=$(cat /app/data/chroma_db/.embedding_model)
-    EXPECTED_MODEL=$(python3 -c "from config import DEFAULT_EMBEDDING_MODEL; print(DEFAULT_EMBEDDING_MODEL)")
-    if [ "$CURRENT_MODEL" != "$EXPECTED_MODEL" ]; then
+elif [ -f "$SIG_FILE" ]; then
+    CURRENT_SIG=$(cat "$SIG_FILE")
+    if [ "$CURRENT_SIG" != "$EXPECTED_SIG" ]; then
         NEEDS_REINDEX=true
-        echo "  Embedding model cambió ($CURRENT_MODEL -> $EXPECTED_MODEL)."
+        echo "  Firma de ingesta cambio:"
+        echo "    actual:   $CURRENT_SIG"
+        echo "    esperada: $EXPECTED_SIG"
     fi
 else
     NEEDS_REINDEX=true
-    echo "  No se encontró registro del embedding model usado."
+    echo "  No se encontro firma de ingesta (.ingest_signature). Forzando re-indexacion."
 fi
 
 if [ "$NEEDS_REINDEX" = true ]; then
-    echo "  Ejecutando ingestión de datos..."
+    echo "  Limpiando ChromaDB previa..."
+    rm -rf /app/data/chroma_db
+    mkdir -p /app/data/chroma_db
+    echo "  Ejecutando ingestion de datos..."
     python3 ingest.py --pdf-dir /reglamentos
-    python3 -c "from config import DEFAULT_EMBEDDING_MODEL; open('/app/data/chroma_db/.embedding_model','w').write(DEFAULT_EMBEDDING_MODEL)"
-    echo "  Ingestión completada."
+    echo "$EXPECTED_SIG" > "$SIG_FILE"
+    echo "  Ingestion completada. Firma guardada: $EXPECTED_SIG"
 else
-    echo "[3/3] ChromaDB encontrada y lista."
+    echo "[3/3] ChromaDB encontrada y lista (firma: $EXPECTED_SIG)."
 fi
 
 # --- Iniciar servidor ---
