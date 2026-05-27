@@ -263,17 +263,17 @@ El backend está organizado en una capa de módulos bajo el directorio `src/`, c
 
 - **`pdf_extractor.py`:** Extrae el contenido textual de los PDFs descargados mediante LiteParse. Implementa una estrategia en dos pasos: primero intenta extracción sin OCR (para PDFs con texto seleccionable); si el resultado contiene menos de 50 caracteres, activa el modo OCR para documentos escaneados. El texto extraído es sometido a un proceso de limpieza que normaliza espacios, elimina encabezados y pies de página repetitivos y corrige problemas de codificación de caracteres especiales del español.
 
-- **`text_chunker.py`:** Aplica una estrategia de chunking jerárquico adaptativo bajo la firma CHUNKER_VERSION = "v3-secciones". La lógica interna y sus parámetros se justifican de la siguiente manera:
+- **`text_chunker.py`:** Aplica una estrategia de chunking jerárquico adaptativo bajo la firma `CHUNKER_VERSION = "v3-secciones"`. La lógica interna y sus parámetros se justifican de la siguiente manera:
 
-    * ARTICLE_MAX_CHARS = 4000 (Subido de 2500): Parámetro crítico para el dominio normativo. Los reglamentos institucionales suelen incluir artículos con listas extensas de literales (por ejemplo, los derechos o deberes de los estudiantes). Configurar este límite alto garantiza que el artículo completo entre en un solo bloque, permitiendo que el SLM vea la estructura e ítems de una sola vez sin fragmentación cross-page.
+    * `ARTICLE_MAX_CHARS = 4000` (Subido de 2500): Parámetro crítico para el dominio normativo. Los reglamentos institucionales suelen incluir artículos con listas extensas de literales (por ejemplo, los derechos o deberes de los estudiantes). Configurar este límite alto garantiza que el artículo completo entre en un solo bloque, permitiendo que el SLM vea la estructura e ítems de una sola vez sin fragmentación cross-page.
 
-    * ARTICLE_MIN_CHARS = 80: Evita la creación de bloques basura o fragmentos vacíos debido a saltos de página o títulos aislados que no aportan contexto semántico.
+    * `ARTICLE_MIN_CHARS = 80`: Evita la creación de bloques basura o fragmentos vacíos debido a saltos de página o títulos aislados que no aportan contexto semántico.
 
-    * CHUNK_SIZE = 1500 y CHUNK_OVERLAP = 200: Funcionan estrictamente como fallback para documentos que carezcan de una estructura clara de artículos, manteniendo el solapamiento estándar para no perder continuidad en los límites de los bloques.
+    * `CHUNK_SIZE = 1500` y `CHUNK_OVERLAP = 200`: Funcionan estrictamente como fallback para documentos que carezcan de una estructura clara de artículos, manteniendo el solapamiento estándar para no perder continuidad en los límites de los bloques.
 
-    * SEPARATORS = ["\n\n", "\n", ". ", " ", ""]: Aplica un orden jerárquico que prioriza los saltos de párrafo, preservando la cohesión de los textos legales.
+    * `SEPARATORS = ["\n\n", "\n", ". ", " ", ""]`: Aplica un orden jerárquico que prioriza los saltos de párrafo, preservando la cohesión de los textos legales.
 
-    * Detección de CHUNKER_VERSION: Si cambia la lógica de detección de secciones o artículos, el entrypoint identifica el cambio de versión e inicia automáticamente una re-indexación de la base vectorial, previniendo desajustes entre el código y los vectores almacenados.
+    * Detección de `CHUNKER_VERSION`: Si cambia la lógica de detección de secciones o artículos, el entrypoint identifica el cambio de versión e inicia automáticamente una re-indexación de la base vectorial, previniendo desajustes entre el código y los vectores almacenados.
 
 - **`embeddings.py` + `vector_store.py`:**
   
