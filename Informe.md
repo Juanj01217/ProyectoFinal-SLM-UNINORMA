@@ -263,13 +263,41 @@ El backend está organizado en una capa de módulos bajo el directorio `src/`, c
 
 - **`pdf_extractor.py`:** Extrae el contenido textual de los PDFs descargados mediante LiteParse. Implementa una estrategia en dos pasos: primero intenta extracción sin OCR (para PDFs con texto seleccionable); si el resultado contiene menos de 50 caracteres, activa el modo OCR para documentos escaneados. El texto extraído es sometido a un proceso de limpieza que normaliza espacios, elimina encabezados y pies de página repetitivos y corrige problemas de codificación de caracteres especiales del español.
 
-- **`text_chunker.py`:** Aplica la estrategia `RecursiveCharacterTextSplitter` de LangChain con ventanas de 1.000 tokens y solapamiento de 200 tokens. Los separadores se aplican en orden jerárquico (`["\n\n", "\n", ". ", " ", ""]`), priorizando los saltos de párrafo para preservar la coherencia semántica. A cada chunk se le adjunta metadatos que incluyen el nombre del archivo fuente, el título del documento, el número de página y el índice secuencial del fragmento, garantizando la trazabilidad necesaria para la citación de fuentes.
+- **`text_chunker.py`:** Aplica una estrategia de chunking jerárquico adaptativo bajo la firma CHUNKER_VERSION = "v3-secciones". La lógica interna y sus parámetros se justifican de la siguiente manera:
 
-- **`embeddings.py` + `vector_store.py`:** El primero instancia y gestiona el modelo de embeddings HuggingFace, exponiendo una interfaz unificada compatible con LangChain. El segundo encapsula todas las operaciones sobre ChromaDB: inicialización de la colección, ingesta de documentos con sus vectores y metadatos, y creación del objeto `Retriever` configurado para búsqueda por similitud del coseno con Top-K=6.
+    * ARTICLE_MAX_CHARS = 4000 (Subido de 2500): Parámetro crítico para el dominio normativo. Los reglamentos institucionales suelen incluir artículos con listas extensas de literales (por ejemplo, los derechos o deberes de los estudiantes). Configurar este límite alto garantiza que el artículo completo entre en un solo bloque, permitiendo que el SLM vea la estructura e ítems de una sola vez sin fragmentación cross-page.
 
-- **`rag_chain.py`:** Compone la cadena LCEL completa: `{"context": retriever | format_docs, "question": RunnablePassthrough()} | prompt_template | ollama_llm | StrOutputParser()`. Implementa deduplicación de fuentes antes del retorno y formatea los metadatos de cada fragmento recuperado para su presentación al usuario.
+    * ARTICLE_MIN_CHARS = 80: Evita la creación de bloques basura o fragmentos vacíos debido a saltos de página o títulos aislados que no aportan contexto semántico.
 
-- **`api.py`:** Define los cuatro _endpoints_ FastAPI del sistema (`/health`, `/models`, `/models/load`, `/query`), los modelos Pydantic de request/response, y el middleware de CORS. El _endpoint_ `/query` invoca la cadena RAG de forma síncrona y retorna la respuesta completa en formato JSON incluyendo `answer`, `sources` y `model`.
+    * CHUNK_SIZE = 1500 y CHUNK_OVERLAP = 200: Funcionan estrictamente como fallback para documentos que carezcan de una estructura clara de artículos, manteniendo el solapamiento estándar para no perder continuidad en los límites de los bloques.
+
+    * SEPARATORS = ["\n\n", "\n", ". ", " ", ""]: Aplica un orden jerárquico que prioriza los saltos de párrafo, preservando la cohesión de los textos legales.
+
+    * Detección de CHUNKER_VERSION: Si cambia la lógica de detección de secciones o artículos, el entrypoint identifica el cambio de versión e inicia automáticamente una re-indexación de la base vectorial, previniendo desajustes entre el código y los vectores almacenados.
+
+- **`embeddings.py` + `vector_store.py`:**
+  
+    * `embeddings.py` (`DEFAULT_EMBEDDING_MODEL = "minilm-multilingual"`): Se utiliza `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensiones) tras revertir el uso de MPNet (768 dimensiones). La justificación es que MPNet introducía una semántica excesivamente amplia en consultas cortas y ambiguas (ej. "carnet"), contaminando el Top-K con bloques adyacentes irrelevantes. MiniLM ofrece un comportamiento más léxico y preciso para este tipo de búsquedas normativas.
+
+    * `vector_store.py` (`RETRIEVAL_TOP_K = 6` y `RETRIEVAL_SCORE_THRESHOLD = 0.40`): Inicializa y gestiona ChromaDB en `data/chroma_db`. Recupera un máximo de 6 candidatos para asegurar que el bloque óptimo (gold chunk) entre en la fase de reordenamiento, pero aplica un filtro estricto de `0.40`. Este umbral está calibrado específicamente para la distribución de puntuaciones de MiniLM, bloqueando el ruido en búsquedas cortas sin sacrificar la cobertura de los reglamentos. La métrica utilizada es la similitud del coseno.
+
+- **`rag_chain.py`:** Compone la cadena LCEL optimizando la recuperación y adaptando el contexto para arquitecturas con modelos de lenguaje pequeños (SLMs):
+
+    * `REWRITE_SLM_MODEL = "qwen2.5:1.5b"`: Modelo dedicado y ligero para la reescritura previa de consultas. Al usar un modelo de 1.5B para una tarea tan acotada, se reduce a la mitad el tiempo de la doble llamada LLM en hardware local.
+
+    * `RERANKER_ENABLED = True` y `RERANKER_MODEL = "jinaai/jina-reranker-v2-base-multilingual"`: Activa el reordenamiento mediante FastEmbed (ONNX int8). Se seleccionó este modelo específico de Jina porque ofrece soporte nativo multilingüe (incluyendo español) y compatibilidad total con el catálogo ONNX de FastEmbed, lo que eleva drásticamente la precisión de recuperación (retrieval accuracy). En caso de fallo en la arquitectura de hardware, el pipeline cuenta con un fallback automático al slicing por similitud de ChromaDB.
+
+    * `RERANKER_TOP_N = 3` (Bajado de 5): Parámetro optimizado para mitigar las limitaciones de atención de un SLM (como `qwen2.5:1.5b`). Entregar 5 bloques (~10k caracteres) provocaba que el modelo mezclara fuentes o alucinara debido a su ventana de atención efectiva reducida. Al recortar a los 3 mejores fragmentos ordenados por el Reranker, el SLM procesa un contexto altamente enfocado, manteniendo la presencia del bloque correcto con una latencia de generación mucho menor.
+
+- **`api.py`:** Define los endpoints de FastAPI (`/health`, `/{slm_provider}/models`, `/{slm_provider}/models/load`, `/query`), expone los esquemas de Pydantic y aplica el middleware de CORS. Integra los parámetros de rendimiento y generación del backend:
+
+    * `SLM_MODELS` y `DEFAULT_SLM_MODEL = "qwen2.5:1.5b"`: Lista de modelos soportados localmente en Ollama bajo la URL base configurada, priorizando por defecto una opción rápida y eficiente de 1.5B de parámetros.
+
+    * `OLLAMA_KEEP_ALIVE = "30m"`: Mantiene el modelo en la memoria de Ollama durante 30 minutos tras la última consulta. Esto elimina el problema del cold-start (tiempos de espera de 5 a 15 segundos) si un usuario vuelve a interactuar con el asistente tras unos minutos de inactividad.
+
+    * `TEMPERATURE = 0.0`: Configuración imprescindible para un asistente normativo y de consulta reglamentaria. Garantiza que la misma pregunta genere exactamente la misma respuesta, priorizando la consistencia y la fidelidad al texto legal sobre la creatividad del modelo.
+
+    * `MAX_TOKENS = 700` (Bajado de 1100): Evita que el SLM divague, repita encabezados o copie texto innecesario en respuestas cortas al encontrarse con un espacio de salida excesivamente amplio. El límite de 700 tokens está calculado para cubrir con seguridad el "caso de éxito" del sistema (explicar listas largas de hasta 10 ítems o respuestas detalladas de 4 a 5 oraciones), asumiendo el riesgo controlado de que alguna lista excepcionalmente larga pueda truncarse en favor de una mayor velocidad y concisión general.
 
 El frontend está organizado en cuatro componentes React reutilizables: `ChatMessage.tsx` (renderiza mensajes con animación de escritura para el estado de carga), `ModelSelector.tsx` (desplegable dinámicamente poblado desde `/models`), `SourceCard.tsx` (muestra fuentes como _chips_ con nombre de documento y página) y `StatusBar.tsx` (indicadores de estado del sistema mediante consultas periódicas a `/health`).
 
